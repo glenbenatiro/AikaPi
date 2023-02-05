@@ -7,9 +7,66 @@
 #include <sys/ioctl.h>
 #include <sys/stat.h>
 
+#include <iostream>
+#include <bitset>
+
 #include <thread>
 #include <chrono>
 #include <cstdio>
+
+// --- Utility Class ---
+
+uint32_t Utility:: 
+get_bits (uint32_t input, unsigned shift, uint32_t mask)
+{
+  return ((input >> shift) & mask);
+}
+
+void Utility:: 
+reg_write (MemoryMap mem_map, 
+           uint32_t  offset, 
+           uint32_t  value, 
+           uint32_t  mask, 
+           unsigned  shift)
+{
+  reg_write (Utility::get_reg32 (mem_map, offset),
+             value,
+             mask,
+             shift);
+}
+
+void Utility:: 
+reg_write (volatile uint32_t *reg,
+                    uint32_t value,
+                    uint32_t mask,
+                    unsigned shift)
+{
+  *reg = (*reg & ~(mask << shift)) | (value << shift);
+}
+
+void Utility:: 
+print_bits (int      bits,
+            unsigned size)
+{
+  #define BYTE_TO_BINARY_PATTERN "%c%c%c%c%c%c%c%c"
+  
+  #define BYTE_TO_BINARY(byte)  \
+    (byte & 0x80 ? '1' : '0'), \
+    (byte & 0x40 ? '1' : '0'), \
+    (byte & 0x20 ? '1' : '0'), \
+    (byte & 0x10 ? '1' : '0'), \
+    (byte & 0x08 ? '1' : '0'), \
+    (byte & 0x04 ? '1' : '0'), \
+    (byte & 0x02 ? '1' : '0'), \
+    (byte & 0x01 ? '1' : '0') 
+
+  for (int a = 0; a < size && a < sizeof (bits); a++)
+  {
+    printf (BYTE_TO_BINARY_PATTERN " ", BYTE_TO_BINARY (bits >> (8 * (size - 1 - a))));
+  }
+
+  printf ("\n");
+}
 
 // 
 // #include "Defaults.h"
@@ -37,7 +94,7 @@ delay (uint32_t microseconds)
 // Allocate uncached memory, get bus & phys addresses
 void*
 AikaPi::map_uncached_mem (MemoryMap *mp,
-                                     int      size)
+                          int        size)
 {
   void *ret;
   
@@ -49,7 +106,7 @@ AikaPi::map_uncached_mem (MemoryMap *mp,
         (mp->virt = map_segment  (BUS_PHYS_ADDR(mp->bus), mp->size)) != 0 
         ? mp->virt : 0;
         
-  printf("VC mem handle %u, phys %p, virt %p\n", mp->h, mp->bus, mp->virt);
+  // printf("VC mem handle %u, phys %p, virt %p\n", mp->h, mp->bus, mp->virt);
   
   return(ret);
 }
@@ -59,11 +116,11 @@ AikaPi::map_devices ()
 {
   map_periph (&m_aux_regs,  (void *) AUX_BASE,  PAGE_SIZE);
   map_periph (&m_gpio_regs, (void *) GPIO_BASE, PAGE_SIZE);
-  map_periph (&m_dma_regs,  (void *) DMA_BASE,  PAGE_SIZE);
-  map_periph (&m_spi_regs,  (void *) SPI0_BASE, PAGE_SIZE);
+  map_periph (&m_regs_dma,  (void *) DMA_BASE,  PAGE_SIZE);
+  map_periph (&m_regs_spi,  (void *) SPI0_BASE, PAGE_SIZE);
   map_periph (&m_clk_regs,  (void *) CLK_BASE,  PAGE_SIZE);
-  map_periph (&m_pwm_regs,  (void *) PWM_BASE,  PAGE_SIZE);
-  map_periph (&m_usec_regs, (void *) USEC_BASE, PAGE_SIZE);
+  map_periph (&m_regs_pwm,  (void *) PWM_BASE,  PAGE_SIZE);
+  map_periph (&m_regs_usec, (void *) USEC_BASE, PAGE_SIZE);
 }
 
 // --- Memory ---
@@ -141,8 +198,8 @@ AikaPi::unmap_segment (void *mem,
 void 
 AikaPi::dma_enable (int chan)
 {
-  *REG32(m_dma_regs, DMA_ENABLE) |= (1 << chan);
-  *REG32(m_dma_regs, DMA_REG(chan, DMA_CS)) = 1 << 31;
+  *REG32(m_regs_dma, DMA_ENABLE) |= (1 << chan);
+  *REG32(m_regs_dma, DMA_REG(chan, DMA_CS)) = 1 << 31;
 }
 
 // Start DMA, given first control block
@@ -152,25 +209,46 @@ AikaPi::dma_start (MemoryMap *mp,
                                 DMA_CB  *cbp, 
                                 uint32_t csval)
 {
-  *REG32(m_dma_regs, DMA_REG(chan, DMA_CONBLK_AD)) = MEM_BUS_ADDR(mp, cbp);
-  *REG32(m_dma_regs, DMA_REG(chan, DMA_CS))        = 2;         // Clear 'end' flag
-  *REG32(m_dma_regs, DMA_REG(chan, DMA_DEBUG))     = 7;         // Clear error bits
-  *REG32(m_dma_regs, DMA_REG(chan, DMA_CS))        = 1 | csval; // Start DMA
+  *REG32(m_regs_dma, DMA_REG(chan, DMA_CONBLK_AD)) = MEM_BUS_ADDR(mp, cbp);
+  *REG32(m_regs_dma, DMA_REG(chan, DMA_CS))        = 2;         // Clear 'end' flag
+  *REG32(m_regs_dma, DMA_REG(chan, DMA_DEBUG))     = 7;         // Clear error bits
+  *REG32(m_regs_dma, DMA_REG(chan, DMA_CS))        = 1 | csval; // Start DMA
 }
+
+// void
+// AikaPi::dma_start (uint32_t dma_channel, 
+//                    uint32_t dma_cb_address)
+// {
+//   // Load control block
+//   *(Utility::get_reg32 (m_regs_dma, 
+//     Utility::dma_chan_reg_offset (dma_channel, DMA_CONBLK_AD))) = dma_cb_address;
+
+//   // Clear END flag in DMA CS
+//   *(Utility::get_reg32 (m_regs_dma, 
+//     Utility::dma_chan_reg_offset (dma_channel, DMA_CS))) = 2;
+
+//   // Clear error flags in DMA DEBUG
+//   *(Utility::get_reg32 (m_regs_dma, 
+//     Utility::dma_chan_reg_offset (dma_channel, DMA_DEBUG))) = 7;
+
+//   // Start DMA channel 
+//   *(Utility::get_reg32 (m_regs_dma, 
+//     Utility::dma_chan_reg_offset (dma_channel, DMA_CS))) = 1;
+// }
 
 // Return remaining transfer length
 uint32_t 
 AikaPi::dma_transfer_len (int chan)
 {
- return (*REG32(m_dma_regs, DMA_REG(chan, DMA_TXFR_LEN)));
+ return (*REG32(m_regs_dma, DMA_REG(chan, DMA_TXFR_LEN)));
 }
 
 // Halt current DMA operation by resetting controller
 void 
 AikaPi::dma_stop (int chan)
 {
-  if (m_dma_regs.virt)
-    *REG32(m_dma_regs, DMA_REG(chan, DMA_CS)) = 1 << 31;
+  if (m_regs_dma.virt)
+    *REG32(m_regs_dma, DMA_REG(chan, DMA_CS)) = 1 << 31;
 }
 
 void 
@@ -186,11 +264,44 @@ AikaPi::dma_wait(int chan)
     printf ("DMA transfer timeout\n");
 }
 
+void 
+AikaPi::dma_pause (unsigned channel)
+{
+  printf ("in dma pause\n");
+
+  volatile uint32_t *reg = Utility::get_reg32 (m_regs_dma, 
+    DMA_REG (channel, DMA_CS));
+
+  Utility::reg_write (reg, 0, 1, 0);
+
+  while (Utility::get_bits (*reg, 4, 1))
+  {
+    printf ("DMA_CS: ");
+
+    std::cout << std::bitset<32> (*reg) << "\n";
+  }
+  
+  // while (Utility::get_bits (*reg, 4, 1));
+
+  printf ("dma pause done\n");
+}
+
+void 
+AikaPi::dma_play (unsigned channel)
+{
+  volatile uint32_t *reg = Utility::get_reg32 (m_regs_dma, 
+    DMA_REG (channel, DMA_CS));
+
+  Utility::reg_write (reg, 1, 1, 0);
+
+  //while (!(Utility::get_bits (*reg, 4, 1)));
+}
+
 // Display DMA registers
 void 
 AikaPi::dma_disp (int chan)
 {
-  const char *m_dma_regstrs[] = {"DMA CS", 
+  const char *m_regs_dmatrs[] = {"DMA CS", 
                                  "CB_AD", 
                                  "TI", 
                                  "SRCE_AD", 
@@ -201,14 +312,14 @@ AikaPi::dma_disp (int chan)
                                  "DEBUG", 
                                  ""};
   int i = 0;
-  volatile uint32_t *p = REG32(m_dma_regs, DMA_REG(chan, DMA_CS));
+  volatile uint32_t *p = REG32(m_regs_dma, DMA_REG(chan, DMA_CS));
     
 
-  while (m_dma_regstrs[i][0])
+  while (m_regs_dmatrs[i][0])
     {
-      printf("%-7s %08X ", m_dma_regstrs[i++], *p++);
+      printf("%-7s %08X ", m_regs_dmatrs[i++], *p++);
       
-      if (i % 5 == 0 || m_dma_regstrs[i][0] == 0)
+      if (i % 5 == 0 || m_regs_dmatrs[i][0] == 0)
         printf("\n");
     }
 }
@@ -375,16 +486,16 @@ AikaPi::terminate (int sig)
   printf("Closing\n");
   
   spi_disable();
-  //dma_stop(DMA_CHAN_A);
-  //dma_stop(DMA_CHAN_B);
-  //dma_stop(DMA_CHAN_C);
+  //dma_stop(DMA_CHAN_PWM_PACING);
+  //dma_stop(DMA_CHAN_SPI_RX);
+  //dma_stop(DMA_CHAN_SPI_TX);
   
-  unmap_periph_mem (&m_vc_mem);
-  unmap_periph_mem (&m_usec_regs);
-  unmap_periph_mem (&m_pwm_regs);
+  // unmap_periph_mem (&m_vc_mem);
+  unmap_periph_mem (&m_regs_usec);
+  unmap_periph_mem (&m_regs_pwm);
   unmap_periph_mem (&m_clk_regs);
-  unmap_periph_mem (&m_spi_regs);
-  unmap_periph_mem (&m_dma_regs);
+  unmap_periph_mem (&m_regs_spi);
+  unmap_periph_mem (&m_regs_dma);
   unmap_periph_mem (&m_gpio_regs);
   
     //if (fifo_name)
@@ -408,25 +519,24 @@ spi_init (double frequency)
   gpio_set (SPI0_SCLK_PIN, GPIO_ALT0, GPIO_NOPULL);
 
   // clear tx and rx fifo. one shot operation
-  spi_clear_rxtx_fifo ();
+  spi_clear_fifo ();
   
   return (spi_set_clock_rate (frequency));
 }
 
 void AikaPi:: 
-spi_clear_rxtx_fifo ()
+spi_clear_fifo ()
 {
-  // *REG32 (m_spi_regs, SPI_CS) = SPI_CS_CLEAR;
-  *REG32 (m_spi_regs, SPI_CS) = 0x30;
+  *(Utility::get_reg32 (m_regs_spi, SPI_CS)) = 2 << 4;
 }
 
 // Set / clear SPI chip select
 void 
 AikaPi::spi_cs (int set)
 {
-  uint32_t csval = *REG32(m_spi_regs, SPI_CS);
+  uint32_t csval = *REG32(m_regs_spi, SPI_CS);
 
-  *REG32(m_spi_regs, SPI_CS) = set ? csval | 0x80 : csval & ~0x80;
+  *REG32(m_regs_spi, SPI_CS) = set ? csval | 0x80 : csval & ~0x80;
 }
 
 // Transfer SPI bytes
@@ -437,12 +547,12 @@ spi_xfer (uint8_t *txd,
 {
   while (length--)
     {
-      *REG8(m_spi_regs, SPI_FIFO) = *txd++;
+      *REG8(m_regs_spi, SPI_FIFO) = *txd++;
       
       // wait for rx fifo to contain AT LEAST 1 byte
-      while ((*REG32(m_spi_regs, SPI_CS) & (1<<17)) == 0);
+      while ((*REG32(m_regs_spi, SPI_CS) & (1<<17)) == 0);
       
-      *rxd++ = *REG32(m_spi_regs, SPI_FIFO);
+      *rxd++ = *REG32(m_regs_spi, SPI_FIFO);
     }
 }
 
@@ -450,8 +560,8 @@ spi_xfer (uint8_t *txd,
 void 
 AikaPi::spi_disable (void)
 {
-    *REG32(m_spi_regs, SPI_CS) = SPI_CS_CLEAR;
-    *REG32(m_spi_regs, SPI_CS) = 0;
+    *REG32(m_regs_spi, SPI_CS) = SPI_CS_CLEAR;
+    *REG32(m_regs_spi, SPI_CS) = 0;
 }
 
 // Display SPI registers
@@ -459,7 +569,7 @@ void AikaPi::
 spi_disp ()
 {
   // SPI register strings
-  const char *m_spi_regstrs[] = {"CS", 
+  const char *m_regs_spitrs[] = {"CS", 
                                "FIFO", 
                                "CLK", 
                                "DLEN", 
@@ -468,10 +578,10 @@ spi_disp ()
                                ""};
 
   int i = 0;
-  volatile uint32_t *p = REG32(m_spi_regs, SPI_CS);
+  volatile uint32_t *p = REG32(m_regs_spi, SPI_CS);
 
-  while (m_spi_regstrs[i][0])
-    printf("%-4s %08X ", m_spi_regstrs[i++], *p++);
+  while (m_regs_spitrs[i][0])
+    printf("%-4s %08X ", m_regs_spitrs[i++], *p++);
   
   printf("\n");
 }
@@ -489,7 +599,7 @@ spi_set_clock_rate (int value)
     divider = 65535;
 
   // set spi frequency as rounded off clock
-  *REG32 (m_spi_regs, SPI_CLK) = divider; 
+  *REG32 (m_regs_spi, SPI_CLK) = divider; 
 
   return (SPI_CLOCK_HZ / divider);  
 }
@@ -977,7 +1087,10 @@ aux_spi_write (uint8_t  channel,
 
 
 // --- GPIO ---
-// Set input or output with pullups
+
+/*
+  Sets the mode and pull-up/down resistor of the specific GPIO pin
+*/
 void AikaPi::
 gpio_set (int pin, 
           int mode, 
@@ -987,6 +1100,9 @@ gpio_set (int pin,
   gpio_pull (pin, pull);
 }
 
+/* 
+  Sets the mode of the specific GPIO pin (input, output, or alt functions 0-5)
+*/
 void AikaPi::
 gpio_mode (int pin, 
            int mode)
@@ -997,13 +1113,16 @@ gpio_mode (int pin,
   Utility::reg_write (reg, mode, 0x7, shift);
 }
 
-// Set I/P pullup or pulldown
-// pull = 0 disable pull up or down
-// pull = 1 for enable pull down
-// pull = 2 for enable pull up
+/*
+  Sets the state of the pull-up/down resistors of the specific GPIO pin
+  00 - off
+  01 - pull down
+  10 - pull up
+  11 - reserved
+*/
 void
 AikaPi::gpio_pull (int pin,
-                                int pull)
+                   int pull)
 {
   volatile uint32_t *reg = REG32(m_gpio_regs, GPIO_GPPUDCLK0) + pin / 32;
   *REG32(m_gpio_regs, GPIO_GPPUD) = pull;
@@ -1055,10 +1174,10 @@ AikaPi::pwm_init (int freq,
   pwm_stop();
 
   // check channel 1 state
-  if (*REG32(m_pwm_regs, PWM_STA) & 0x100)
+  if (*REG32(m_regs_pwm, PWM_STA) & 0x100)
     {
       printf("PWM bus error\n");
-      *REG32(m_pwm_regs, PWM_STA) = 0x100;
+      *REG32(m_regs_pwm, PWM_STA) = 0x100;
     }
 
   #if USE_VC_CLOCK_SET
@@ -1096,36 +1215,27 @@ AikaPi::pwm_init (int freq,
 
 
   usleep(100);
-  *REG32(m_pwm_regs, PWM_RNG1) = range;
-  *REG32(m_pwm_regs, PWM_FIF1) = val;
+  *REG32(m_regs_pwm, PWM_RNG1) = range;
+  *REG32(m_regs_pwm, PWM_FIF1) = val;
   usleep(100);
 
-
-  #if PWM_OUT
-    gpio_mode(PWM_PIN, GPIO_ALT5);
-  #endif
-
-  //gpio_set(PWM_PIN, GPIO_ALT5, 1);
+  gpio_set(PWM_PIN, GPIO_ALT0, GPIO_PULL_DOWN);
 }
 
 // Start PWM operation
 void 
 AikaPi::pwm_start ()
 {
-  *REG32(m_pwm_regs, PWM_CTL) = PWM_CTL_USEF1 | PWM_ENAB;
-  usleep(1000);
+  *REG32(m_regs_pwm, PWM_CTL) = PWM_CTL_USEF1 | PWM_ENAB;
+  // usleep(1000);
 }
 
 // Stop PWM operation
 void 
 AikaPi::pwm_stop ()
 {
-  if (m_pwm_regs.virt)
-
-  {
-    *REG32(m_pwm_regs, PWM_CTL) = 0;
-    usleep(1000);
-  }
+  *(Utility::get_reg32 (m_regs_pwm, PWM_CTL)) = 0;
+  // usleep (100);
 }
 
 void
@@ -1136,10 +1246,10 @@ AikaPi::pwm_set_frequency (float frequency)
   uint32_t range = (m_pwm_frequency * 2) / (frequency * 4);
 
   // check channel 1 state
-  if (*REG32(m_pwm_regs, PWM_STA) & 0x100)
+  if (*REG32(m_regs_pwm, PWM_STA) & 0x100)
     {
       printf("PWM bus error\n");
-      *REG32(m_pwm_regs, PWM_STA) = 0x100;
+      *REG32(m_regs_pwm, PWM_STA) = 0x100;
     }
 
   // see the BCM2385 Audio Clocks datasheet PDF for reference.
@@ -1172,8 +1282,8 @@ AikaPi::pwm_set_frequency (float frequency)
   while ((*REG32(m_clk_regs, CLK_PWM_CTL) & (1 << 7)) == 0) ;
 
   usleep(1000);
-  *REG32(m_pwm_regs, PWM_RNG1) = range;
-  *REG32(m_pwm_regs, PWM_FIF1) = m_pwm_value;
+  *REG32(m_regs_pwm, PWM_RNG1) = range;
+  *REG32(m_regs_pwm, PWM_FIF1) = m_pwm_value;
   usleep(1000);
 
   pwm_start ();
@@ -1262,65 +1372,5 @@ sleep_nano (int nano)
 //   return 0;
 // }
 
-// --- Utility Class ---
-
-uint32_t Utility:: 
-get_bits (uint32_t input, unsigned shift, uint32_t mask)
-{
-  return ((input >> shift) & mask);
-}
-
-volatile uint32_t* Utility:: 
-get_reg32 (MemoryMap mem_map, 
-           uint32_t  offset)
-{
-  return (volatile uint32_t *)((uint32_t)(mem_map.virt) + (uint32_t)(offset));
-}
-
-void Utility:: 
-reg_write (MemoryMap mem_map, 
-           uint32_t  offset, 
-           uint32_t  value, 
-           uint32_t  mask, 
-           unsigned  shift)
-{
-  reg_write (Utility::get_reg32 (mem_map, offset),
-             value,
-             mask,
-             shift);
-}
-
-void Utility:: 
-reg_write (volatile uint32_t *reg,
-                    uint32_t value,
-                    uint32_t mask,
-                    unsigned shift)
-{
-  *reg = (*reg & ~(mask << shift)) | (value << shift);
-}
-
-void Utility:: 
-print_bits (int      bits,
-            unsigned size)
-{
-  #define BYTE_TO_BINARY_PATTERN "%c%c%c%c%c%c%c%c"
-  
-  #define BYTE_TO_BINARY(byte)  \
-    (byte & 0x80 ? '1' : '0'), \
-    (byte & 0x40 ? '1' : '0'), \
-    (byte & 0x20 ? '1' : '0'), \
-    (byte & 0x10 ? '1' : '0'), \
-    (byte & 0x08 ? '1' : '0'), \
-    (byte & 0x04 ? '1' : '0'), \
-    (byte & 0x02 ? '1' : '0'), \
-    (byte & 0x01 ? '1' : '0') 
-
-  for (int a = 0; a < size && a < sizeof (bits); a++)
-  {
-    printf (BYTE_TO_BINARY_PATTERN " ", BYTE_TO_BINARY (bits >> (8 * (size - 1 - a))));
-  }
-
-  printf ("\n");
-}
 
 // EOF
