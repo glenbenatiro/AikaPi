@@ -50,15 +50,11 @@ constexpr uint32_t DMA_CB_TI_SPI_TX = (DMA_TI_TX_DREQ << 16) | DMA_TI_DEST_DREQ 
 constexpr uint32_t DMA_CB_TI_SPI_RX = (DMA_TI_RX_DREQ << 16) | DMA_TI_SRC_DREQ | DMA_TI_DEST_INC | DMA_TI_WAIT_RESP;
 
 // DMA control block macros
-#define NUM_CBS         10
 #define REG(r, a)       REG_BUS_ADDR(r, a)
 #define MEM(m, a)       MEM_BUS_ADDR(m, a)
 #define CBS(n)          MEM_BUS_ADDR(mp, &dp->cbs[(n)])
 
 // DMA channels and data requests
-constexpr unsigned DMA_CHAN_PWM_PACING  = 7;
-constexpr unsigned DMA_CHAN_SPI_RX      = 8;
-constexpr unsigned DMA_CHAN_SPI_TX      = 9;
 #define DMA_PWM_DREQ    5
 #define DMA_SPI_TX_DREQ 6
 #define DMA_SPI_RX_DREQ 7
@@ -399,16 +395,11 @@ typedef struct
 class Utility 
 {
   public:
+    static uint32_t   get_bits   (uint32_t input, unsigned shift, uint32_t mask);
+    static void       reg_write  (MemoryMap mem_map, uint32_t offset, uint32_t value, uint32_t mask, unsigned shift);
+    static void       reg_write  (volatile uint32_t *reg, uint32_t value, uint32_t mask, unsigned shift);
 
-
-
-    
-              static uint32_t   get_bits   (uint32_t input, unsigned shift, uint32_t mask);
-
-              static void       reg_write  (MemoryMap mem_map, uint32_t offset, uint32_t value, uint32_t mask, unsigned shift);
-              static void       reg_write  (volatile uint32_t *reg, uint32_t value, uint32_t mask, unsigned shift);
-
-              static void      print_bits (int bits, unsigned size = 1);
+    static void      print_bits (int bits, unsigned size = 1);
 
 
   // inline functions
@@ -453,7 +444,7 @@ class AikaPi
   public:
     //int m_spi_frequency = LAB_SPI_FREQUENCY;
 
-    MemoryMap m_gpio_regs,
+    MemoryMap m_regs_gpio,
             m_regs_dma, 
             m_clk_regs, 
             m_regs_pwm, 
@@ -513,8 +504,10 @@ class AikaPi
     void     dma_stop         (int chan);
     void     dma_wait         (int chan);
     void      dma_pause       (unsigned channel);
+    bool      is_dma_paused   (unsigned channel);
     void      dma_play        (unsigned channel);
-    uint32_t dma_transfer_len (int chan);
+    void      dma_abort       (unsigned channel);
+    uint32_t  dma_transfer_len (int chan);
     
     // --- GPIO ---
     void      gpio_set    (int pin, int mode, int pull);

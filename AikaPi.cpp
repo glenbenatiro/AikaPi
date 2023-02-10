@@ -115,7 +115,7 @@ void
 AikaPi::map_devices ()
 {
   map_periph (&m_aux_regs,  (void *) AUX_BASE,  PAGE_SIZE);
-  map_periph (&m_gpio_regs, (void *) GPIO_BASE, PAGE_SIZE);
+  map_periph (&m_regs_gpio, (void *) GPIO_BASE, PAGE_SIZE);
   map_periph (&m_regs_dma,  (void *) DMA_BASE,  PAGE_SIZE);
   map_periph (&m_regs_spi,  (void *) SPI0_BASE, PAGE_SIZE);
   map_periph (&m_clk_regs,  (void *) CLK_BASE,  PAGE_SIZE);
@@ -267,23 +267,29 @@ AikaPi::dma_wait(int chan)
 void 
 AikaPi::dma_pause (unsigned channel)
 {
-  printf ("in dma pause\n");
-
   volatile uint32_t *reg = Utility::get_reg32 (m_regs_dma, 
     DMA_REG (channel, DMA_CS));
 
   Utility::reg_write (reg, 0, 1, 0);
 
-  while (Utility::get_bits (*reg, 4, 1))
+  // wait for the PAUSED flag to be 1
+  while (!(Utility::get_bits (*reg, 4, 1)));
+}
+
+bool 
+AikaPi::is_dma_paused (unsigned channel)
+{
+  volatile uint32_t *reg = Utility::get_reg32 (m_regs_dma, 
+    DMA_REG (channel, DMA_CS));
+
+  if (Utility::get_bits (*reg, 4, 1))
   {
-    printf ("DMA_CS: ");
-
-    std::cout << std::bitset<32> (*reg) << "\n";
+    return (true);
   }
-  
-  // while (Utility::get_bits (*reg, 4, 1));
-
-  printf ("dma pause done\n");
+  else 
+  {
+    return (false);
+  }
 }
 
 void 
@@ -294,7 +300,17 @@ AikaPi::dma_play (unsigned channel)
 
   Utility::reg_write (reg, 1, 1, 0);
 
-  //while (!(Utility::get_bits (*reg, 4, 1)));
+  // wait for the PAUSED flag to be 0
+  while (Utility::get_bits (*reg, 4, 1));
+}
+
+// Abort the current DMA control block. 
+// The DMA will load the next control block and attempt to continue.
+void 
+AikaPi::dma_abort (unsigned channel)
+{
+  Utility::reg_write (Utility::get_reg32 (m_regs_dma, 
+    DMA_REG (channel, DMA_CS)), 1, 1, 30);
 }
 
 // Display DMA registers
@@ -486,9 +502,9 @@ AikaPi::terminate (int sig)
   printf("Closing\n");
   
   spi_disable();
-  //dma_stop(DMA_CHAN_PWM_PACING);
-  //dma_stop(DMA_CHAN_SPI_RX);
-  //dma_stop(DMA_CHAN_SPI_TX);
+  //dma_stop(LAB_OSCILLOSCOPE_DMA_CHAN_PWM_PACING);
+  //dma_stop(LAB_OSCILLOSCOPE_DMA_CHAN_SPI_RX);
+  //dma_stop(LAB_OSCILLOSCOPE_DMA_CHAN_SPI_TX);
   
   // unmap_periph_mem (&m_vc_mem);
   unmap_periph_mem (&m_regs_usec);
@@ -496,7 +512,7 @@ AikaPi::terminate (int sig)
   unmap_periph_mem (&m_clk_regs);
   unmap_periph_mem (&m_regs_spi);
   unmap_periph_mem (&m_regs_dma);
-  unmap_periph_mem (&m_gpio_regs);
+  unmap_periph_mem (&m_regs_gpio);
   
     //if (fifo_name)
         //destroy_fifo(fifo_name, fifo_fd);
@@ -1107,7 +1123,7 @@ void AikaPi::
 gpio_mode (int pin, 
            int mode)
 {
-  volatile uint32_t *reg = Utility::get_reg32 (m_gpio_regs, GPFSEL0) + (pin / 10);
+  volatile uint32_t *reg = Utility::get_reg32 (m_regs_gpio, GPFSEL0) + (pin / 10);
   unsigned shift = (pin % 10) * 3;
 
   Utility::reg_write (reg, mode, 0x7, shift);
@@ -1124,14 +1140,14 @@ void
 AikaPi::gpio_pull (int pin,
                    int pull)
 {
-  volatile uint32_t *reg = REG32(m_gpio_regs, GPIO_GPPUDCLK0) + pin / 32;
-  *REG32(m_gpio_regs, GPIO_GPPUD) = pull;
+  volatile uint32_t *reg = REG32(m_regs_gpio, GPIO_GPPUDCLK0) + pin / 32;
+  *REG32(m_regs_gpio, GPIO_GPPUD) = pull;
   usleep(2);
   
   *reg = pin << (pin % 32);
   usleep(2);
     
-  *REG32(m_gpio_regs, GPIO_GPPUD) = 0;
+  *REG32(m_regs_gpio, GPIO_GPPUD) = 0;
 
   *reg = 0;
 }
@@ -1140,7 +1156,7 @@ void AikaPi::
 gpio_write (unsigned pin,   
             bool     value)
 {
-  volatile uint32_t *reg = Utility::get_reg32 (m_gpio_regs, 
+  volatile uint32_t *reg = Utility::get_reg32 (m_regs_gpio, 
     value ? GPSET0 : GPCLR0) + (pin / 32);
 
   *reg = 1 << (pin % 32);
@@ -1149,7 +1165,7 @@ gpio_write (unsigned pin,
 bool 
 AikaPi::gpio_read (int pin)
 {
-  volatile uint32_t *reg = Utility::get_reg32 (m_gpio_regs, GPIO_LEV0) + (pin / 32);
+  volatile uint32_t *reg = Utility::get_reg32 (m_regs_gpio, GPIO_LEV0) + (pin / 32);
 
   return (((*reg) >> (pin % 32)) & 1);
 }
@@ -1157,7 +1173,7 @@ AikaPi::gpio_read (int pin)
 uint32_t AikaPi:: 
 gpio_mode (unsigned pin)
 {
-  volatile uint32_t *reg = (Utility::get_reg32 (m_gpio_regs, GPFSEL0)) + (pin / 10);
+  volatile uint32_t *reg = (Utility::get_reg32 (m_regs_gpio, GPFSEL0)) + (pin / 10);
 
   return (Utility::get_bits (*reg, (pin % 10) * 3, 0x7));
 }
