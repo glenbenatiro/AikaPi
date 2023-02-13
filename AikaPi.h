@@ -28,26 +28,29 @@
 #endif
 
 // Location of peripheral registers in physical memory
-#define PI_01_REG_BASE 0x20000000 // Pi Zero or 1
+// This can be seen on page 5 of ARM BCM2385 document
+#define PI_01_REG_BASE 0x20000000 // Pi Zero or 1 
 #define PI_23_REG_BASE 0x3F000000 // Pi 2 or 3
 #define PI_4_REG_BASE  0xFE000000 // Pi 4
 
 // Location of peripheral registers in bus memory
-#define BUS_REG_BASE   0x7E000000
+// This can be seen on page 5 of ARM BCM2385 document
+constexpr uint32_t BUS_REG_BASE = 0x7E000000;
 
 // --- DMA ---
-constexpr uint32_t DMA_TI_DREQ_PWM  = 5;
-constexpr uint32_t DMA_TI_RX_DREQ   = 7;
-constexpr uint32_t DMA_TI_TX_DREQ   = 6;
-constexpr uint32_t DMA_TI_SRC_DREQ  = 1 << 10;
-constexpr uint32_t DMA_TI_SRC_INC   = 1 << 8;
-constexpr uint32_t DMA_TI_DEST_DREQ = 1 << 6;
-constexpr uint32_t DMA_TI_DEST_INC  = 1 << 4;
-constexpr uint32_t DMA_TI_WAIT_RESP = 1 << 3;
+constexpr uint32_t DMA_BASE           = (PHYS_REG_BASE + 0x007000);
+constexpr uint32_t DMA_TI_DREQ_PWM    = 5;
+constexpr uint32_t DMA_TI_DREQ_SPI_RX = 7;
+constexpr uint32_t DMA_TI_DREQ_SPI_TX = 6;
+constexpr uint32_t DMA_TI_SRC_DREQ    = 1 << 10;
+constexpr uint32_t DMA_TI_SRC_INC     = 1 << 8;
+constexpr uint32_t DMA_TI_DEST_DREQ   = 1 << 6;
+constexpr uint32_t DMA_TI_DEST_INC    = 1 << 4;
+constexpr uint32_t DMA_TI_WAIT_RESP   = 1 << 3;
 
 constexpr uint32_t DMA_CB_TI_PWM    = (DMA_TI_DREQ_PWM << 16) | DMA_TI_DEST_DREQ | DMA_TI_WAIT_RESP;
-constexpr uint32_t DMA_CB_TI_SPI_TX = (DMA_TI_TX_DREQ << 16) | DMA_TI_DEST_DREQ | DMA_TI_SRC_INC | DMA_TI_WAIT_RESP;
-constexpr uint32_t DMA_CB_TI_SPI_RX = (DMA_TI_RX_DREQ << 16) | DMA_TI_SRC_DREQ | DMA_TI_DEST_INC | DMA_TI_WAIT_RESP;
+constexpr uint32_t DMA_CB_TI_SPI_TX = (DMA_TI_DREQ_SPI_TX << 16) | DMA_TI_DEST_DREQ | DMA_TI_SRC_INC | DMA_TI_WAIT_RESP;
+constexpr uint32_t DMA_CB_TI_SPI_RX = (DMA_TI_DREQ_SPI_RX << 16) | DMA_TI_SRC_DREQ | DMA_TI_DEST_INC | DMA_TI_WAIT_RESP;
 
 // DMA control block macros
 #define REG(r, a)       REG_BUS_ADDR(r, a)
@@ -58,19 +61,18 @@ constexpr uint32_t DMA_CB_TI_SPI_RX = (DMA_TI_RX_DREQ << 16) | DMA_TI_SRC_DREQ |
 #define DMA_PWM_DREQ    5
 #define DMA_SPI_TX_DREQ 6
 #define DMA_SPI_RX_DREQ 7
-#define DMA_BASE        (PHYS_REG_BASE + 0x007000)
+
 
 // DMA register addresses offset by 0x100 * chan_num
-constexpr uint32_t DMA_CONBLK_AD = 0x4;
-#define DMA_CS          0x00
-
-#define DMA_TI          0x08
-#define DMA_SRCE_AD     0x0c
-#define DMA_DEST_AD     0x10
-#define DMA_TXFR_LEN    0x14
-#define DMA_STRIDE      0x18
-#define DMA_NEXTCONBK   0x1c
-#define DMA_DEBUG       0x20
+constexpr uint32_t DMA_CONBLK_AD = 0x04;
+constexpr uint32_t DMA_CS        = 0x00;
+constexpr uint32_t DMA_TI        = 0x08;
+constexpr uint32_t DMA_SRCE_AD   = 0x0c;
+constexpr uint32_t DMA_DEST_AD   = 0x10;
+constexpr uint32_t DMA_TXFR_LEN  = 0x14;
+constexpr uint32_t DMA_STRIDE    = 0x18;
+constexpr uint32_t DMA_NEXTCONBK = 0x1c;
+constexpr uint32_t DMA_DEBUG     = 0x20;
 #define DMA_REG(ch, r)  ((r) == DMA_ENABLE ? DMA_ENABLE : (ch) * 0x100 + (r))
 #define DMA_ENABLE      0xff0
 
@@ -95,6 +97,15 @@ typedef struct {
            debug,   // Debug register, zero in control block
            unused;
 } DMA_CB __attribute__ ((aligned(32)));
+
+
+// Clock Manager Audio Clock
+// https://www.scribd.com/doc/127599939/BCM2835-Audio-clocks
+constexpr uint32_t CM_BASE    = (PHYS_REG_BASE + 0x101000);
+constexpr uint32_t CM_PWMCTL  = 0xa0;
+constexpr uint32_t CM_PWMDIV  = 0xa4;
+constexpr uint32_t CM_PASSWD  = 0x5a000000;
+constexpr int PWM_CLOCK_ID    = 0xa;
 
 // --- General Raspberry Pi ---
 constexpr int PI_MAX_USER_GPIO  = 31;
@@ -181,12 +192,6 @@ constexpr int GPIO_PULLDN = 1;
 constexpr int GPIO_PULLUP = 2;
 
 
-// --- Clock ---
-constexpr int CLK_BASE      = (PHYS_REG_BASE + 0x101000);
-constexpr int CLK_PWM_CTL   = 0x0a0;
-constexpr int CLK_PWM_DIV   = 0x0a4;
-constexpr int CLK_PASSWD    = 0x5a000000;
-constexpr int PWM_CLOCK_ID  = 0xa;
 
 // --- Microsecond Timer ---
 // Page 172
@@ -204,7 +209,7 @@ typedef struct
            blen,        // Buffer length (bytes)
            dlen,        // Data length (bytes)
            uints[32-5]; // Data (108 bytes maximum)
-} VC_MSG __attribute__ ((aligned (16)));
+} AP_VC_MSG __attribute__ ((aligned (16)));
 
 // VideoCore Mailbox Allocate Memory Flags
 // https://github.com/raspberrypi/firmware/wiki/Mailbox-property-interface#allocate-memory
@@ -332,6 +337,20 @@ enum BB_SPI_FLAG
   BB_SPI_FLAG_RX_LSB  = 15
 };
 
+enum PWM_CHANNEL_MODE
+{
+  PWM_CHANNEL_MODE_PWM = 0,
+  PWM_CHANNEL_MODE_SERIALISER = 1
+};
+
+enum CM_PWM_MASH
+{
+  CM_PWM_MASH_INTEGER = 0,
+  CM_PWM_MASH_1STAGE  = 1,
+  CM_PWM_MASH_2STAGE  = 2,
+  CM_PWM_MASH_3STAGE  = 3
+};
+
 // --- Structs ---
 typedef struct 
 {
@@ -397,24 +416,34 @@ class Utility
   public:
     static uint32_t   get_bits   (uint32_t input, unsigned shift, uint32_t mask);
     static void       reg_write  (MemoryMap mem_map, uint32_t offset, uint32_t value, uint32_t mask, unsigned shift);
-    static void       reg_write  (volatile uint32_t *reg, uint32_t value, uint32_t mask, unsigned shift);
+
+
+    static void reg_write (volatile uint32_t *reg, 
+                           uint32_t           value, 
+                           uint32_t           mask, 
+                           unsigned           shift)
+    {
+      *reg = (*reg & ~(mask << shift)) | (value << shift);
+    }
 
     static void      print_bits (int bits, unsigned size = 1);
 
 
   // inline functions
 
-  // Return a uint32_t pointer to the virtual address of peripheral + offset
+  // Return a uint32_t to the virtual address of specific register of a peripheral
   static volatile uint32_t* get_reg32 (MemoryMap mem_map, uint32_t  offset)
   {
     return (volatile uint32_t *)((uint32_t)(mem_map.virt) + (uint32_t)(offset));
   }
 
-  static uint32_t reg_bus_addr (MemoryMap *_MemoryMap, uint32_t  offset)
+  // Return a uint32_t bus address of a specific register of a peripheral 
+  static uint32_t reg_bus_addr (MemoryMap *_MemoryMap, uint32_t offset)
   {
     return ((uint32_t)(_MemoryMap->bus) + offset); 
   }
 
+  // Return a bus address, given virtual address
   static uint32_t mem_bus_addr (MemoryMap *_MemoryMap, volatile void* offset)
   {
     return ((uint32_t)(offset) - (uint32_t)(_MemoryMap->virt) + 
@@ -428,29 +457,29 @@ class Utility
   }
 };
 
-// --- AikaPi Defaults ---
-constexpr double SPI_FREQUENCY = 5'000'000; // FINAL
-
 // --- AikaPi ---
 
 class AikaPi
 {
   private: 
-    int m_pwm_frequency   = 5'000'000,
-        m_pwm_value       = 2;
+    int m_pwm_value       = 10;
+
+    double m_pwm_freq = 0.0;
 
     Pin_Info m_pin_info [PI_MAX_USER_GPIO + 1];
+
+    bool m_is_pwm_init = false;
 
   public:
     //int m_spi_frequency = LAB_SPI_FREQUENCY;
 
     MemoryMap m_regs_gpio,
-            m_regs_dma, 
-            m_clk_regs, 
-            m_regs_pwm, 
-            m_regs_spi, 
-            m_regs_usec,
-            m_aux_regs;
+              m_regs_dma, 
+              m_regs_clk, 
+              m_regs_pwm, 
+              m_regs_spi, 
+              m_regs_usec,
+              m_aux_regs;
 
     // MemoryMap m_vc_mem;
        
@@ -477,15 +506,15 @@ class AikaPi
     
     // --- Videocore Mailbox ---
     int  	   mailbox_open        (void);
-    void     disp_vc_msg      (VC_MSG *msgp);
+    void     disp_vc_msg      (AP_VC_MSG *msgp);
     void 	   mailbox_close       (int fd);
     void     unmap_segment    (void *mem, int  size);
-    void*    lock_vc_mem      (int fd, int h);
-    uint32_t msg_mbox         (int fd, VC_MSG *msgp);
+    void*    vc_mem_lock      (int fd, int h);
+    uint32_t mbox_msg         (int fd, AP_VC_MSG *msgp);
     uint32_t fset_vc_clock    (int fd, int id, uint32_t freq);
-    uint32_t free_vc_mem      (int fd, int h);
-    uint32_t unlock_vc_mem    (int fd, int h);
-    uint32_t alloc_vc_mem     (int fd, uint32_t size, MAILBOX_ALLOCATE_MEMORY_FLAGS flags);
+    uint32_t vc_mem_release      (int fd, int h);
+    uint32_t vc_mem_unlock    (int fd, int h);
+    uint32_t vc_mem_alloc     (int fd, uint32_t size, MAILBOX_ALLOCATE_MEMORY_FLAGS flags);
   
     // --- Aux ---
     void     fail             (const char *s);
@@ -501,7 +530,7 @@ class AikaPi
                                 uint32_t csval);
 
     void     dma_disp         (int chan);
-    void     dma_stop         (int chan);
+    void     dma_reset         (int chan);
     void     dma_wait         (int chan);
     void      dma_pause       (unsigned channel);
     bool      is_dma_paused   (unsigned channel);
@@ -562,20 +591,28 @@ class AikaPi
     void aux_spi0_shift_length (uint8_t value);
     void aux_spi0_shift_out_MS_first (bool value);
     void aux_spi0_shift_in_MS_first (bool value);
-    
-
     void aux_spi0_write (char *buf, unsigned int length);
     void aux_spi0_read (char *txbuf, char *rxbuf, unsigned int length); 
-    
     void aux_spi_xfer   (uint8_t channel, char *txbuff, char *rxbuff, uint8_t count);
     void aux_spi_write  (uint8_t channel, char *txbuff,               uint8_t count);
 
-
     // --- PWM ---
-    void      pwm_init         (int freq, int range, int val);
-    void      pwm_start        ();
-    void      pwm_stop         ();
-    void      pwm_set_frequency (float frequency);
+    int     pwm_init              (unsigned channel, double source_freq, int range, int val);
+    void    pwm_start             ();
+    void    pwm_stop              ();
+    double  pwm_frequency         (double value, double duty_cycle);
+    int     pwm_enable            (unsigned channel, bool value);
+    int     pwm_mode              (unsigned channel, int value);
+    int     pwm_repeat_last_data  (unsigned channel, bool value);
+    int     pwm_use_fifo          (unsigned channel, bool value);
+    bool    pwm_channel_state     (unsigned channel);
+    int     pwm_fifo              (uint32_t value);
+    int     pwm_range             (unsigned channel, uint32_t value);
+    int     pwm_reset             (unsigned channel);
+
+    // --- Clock Manager Audio Clocks ---
+    double  cm_pwm_frequency     (double value);
+    double  cm_pwm_frequency     (double value, uint32_t mash);
 
     // --- FIFO ---
     int      fifo_create      (const char *fifo_name);

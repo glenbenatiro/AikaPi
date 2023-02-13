@@ -1,18 +1,18 @@
 #include "AikaPi.h"
 
+#include <iostream>
+#include <bitset>
+#include <thread>
+#include <chrono>
+#include <cstdio>
+#include <cmath>
+
 #include <fcntl.h>
 #include <unistd.h>
 #include <poll.h>
 #include <sys/mman.h>
 #include <sys/ioctl.h>
 #include <sys/stat.h>
-
-#include <iostream>
-#include <bitset>
-
-#include <thread>
-#include <chrono>
-#include <cstdio>
 
 // --- Utility Class ---
 
@@ -33,15 +33,6 @@ reg_write (MemoryMap mem_map,
              value,
              mask,
              shift);
-}
-
-void Utility:: 
-reg_write (volatile uint32_t *reg,
-                    uint32_t value,
-                    uint32_t mask,
-                    unsigned shift)
-{
-  *reg = (*reg & ~(mask << shift)) | (value << shift);
 }
 
 void Utility:: 
@@ -75,7 +66,7 @@ AikaPi::AikaPi ()
 {
   map_devices ();
  
-  spi_init (SPI_FREQUENCY);
+  // spi_init (SPI_FREQUENCY);
   // aux_spi0_init ();
 }
 
@@ -101,8 +92,8 @@ AikaPi::map_uncached_mem (MemoryMap *mp,
   mp->size = PAGE_ROUNDUP(size);
   mp->fd   = mailbox_open ();
   
-  ret = (mp->h    = alloc_vc_mem (mp->fd, mp->size, DMA_MEM_FLAGS))   > 0 &&
-        (mp->bus  = lock_vc_mem  (mp->fd, mp->h))                    != 0 &&
+  ret = (mp->h    = vc_mem_alloc (mp->fd, mp->size, DMA_MEM_FLAGS))   > 0 &&
+        (mp->bus  = vc_mem_lock  (mp->fd, mp->h))                    != 0 &&
         (mp->virt = map_segment  (BUS_PHYS_ADDR(mp->bus), mp->size)) != 0 
         ? mp->virt : 0;
         
@@ -118,13 +109,12 @@ AikaPi::map_devices ()
   map_periph (&m_regs_gpio, (void *) GPIO_BASE, PAGE_SIZE);
   map_periph (&m_regs_dma,  (void *) DMA_BASE,  PAGE_SIZE);
   map_periph (&m_regs_spi,  (void *) SPI0_BASE, PAGE_SIZE);
-  map_periph (&m_clk_regs,  (void *) CLK_BASE,  PAGE_SIZE);
+  map_periph (&m_regs_clk,  (void *) CM_BASE,   PAGE_SIZE);
   map_periph (&m_regs_pwm,  (void *) PWM_BASE,  PAGE_SIZE);
   map_periph (&m_regs_usec, (void *) USEC_BASE, PAGE_SIZE);
 }
 
 // --- Memory ---
-// use mmap to obtain virtual address, given physical
 void
 AikaPi::map_periph (MemoryMap *mp, void *phys, int size)
 {
@@ -143,8 +133,8 @@ AikaPi::unmap_periph_mem (MemoryMap *mp)
       if (mp->fd)
         {
           unmap_segment (mp->virt, mp->size);
-          unlock_vc_mem (mp->fd, mp->h);
-          free_vc_mem   (mp->fd, mp->h);
+          vc_mem_unlock (mp->fd, mp->h);
+          vc_mem_release   (mp->fd, mp->h);
           mailbox_close    (mp->fd);
         }
       else
@@ -158,7 +148,7 @@ AikaPi::unmap_periph_mem (MemoryMap *mp)
 // Get virtual memory segment for peripheral regs or physical mem
 void*
 AikaPi::map_segment (void *addr, 
-                                  int   size)
+                     int   size)
 {
   int fd;
   void *mem;
@@ -245,7 +235,7 @@ AikaPi::dma_transfer_len (int chan)
 
 // Halt current DMA operation by resetting controller
 void 
-AikaPi::dma_stop (int chan)
+AikaPi::dma_reset (int chan)
 {
   if (m_regs_dma.virt)
     *REG32(m_regs_dma, DMA_REG(chan, DMA_CS)) = 1 << 31;
@@ -343,7 +333,6 @@ AikaPi::dma_disp (int chan)
 
 // --- Videocore Mailbox ---
 // https://github.com/raspberrypi/firmware/wiki/Mailbox-property-interface
-
 int 
 AikaPi::mailbox_open (void)
 {
@@ -364,8 +353,8 @@ AikaPi::mailbox_close (int fd)
 
 // Send message to mailbox, return first response int, 0 if error
 uint32_t 
-AikaPi::msg_mbox (int     fd, 
-                               VC_MSG *msgp)
+AikaPi::mbox_msg (int     fd, 
+                               AP_VC_MSG *msgp)
 {
   uint32_t ret = 0, i;
 
@@ -391,60 +380,88 @@ AikaPi::msg_mbox (int     fd,
   return (ret);
 }
 
-// Allocate memory on PAGE_SIZE boundary, return handle
+// Allocates contiguous memory on the GPU. Size and alignment are in bytes.
+// https://github.com/raspberrypi/firmware/wiki/Mailbox-property-interface#allocate-memory
 uint32_t 
-AikaPi::alloc_vc_mem (int            fd, 
-                                   uint32_t       size,
-                                   MAILBOX_ALLOCATE_MEMORY_FLAGS flags)
+AikaPi::vc_mem_alloc (int      fd, 
+                      uint32_t size,
+                      MAILBOX_ALLOCATE_MEMORY_FLAGS flags)
 {
-  // https://github.com/raspberrypi/firmware/wiki/Mailbox-property-interface#allocate-memory
-
-  VC_MSG msg = {.tag   = MAILBOX_TAG_ALLOCATE_MEMORY,
-                .blen  = 12,
-                .dlen  = 12,
-                .uints = {PAGE_ROUNDUP(size), 
-                          PAGE_SIZE, flags}};
+  AP_VC_MSG msg = 
+  {
+    .tag   = MAILBOX_TAG_ALLOCATE_MEMORY,
+    .blen  = 12,
+    .dlen  = 12,
+    .uints =  
+    {
+      PAGE_ROUNDUP(size), 
+      PAGE_SIZE, flags
+    }
+  };
                           
-  return (msg_mbox(fd, &msg));
+  return (mbox_msg (fd, &msg));
 }
 
-// Lock allocated memory, return bus address
+// Lock buffer in place, and return a bus address. Must be done before memory
+// can be accessed. bus address != 0 is success
+// https://github.com/raspberrypi/firmware/wiki/Mailbox-property-interface#lock-memory
 void*
-AikaPi::lock_vc_mem (int fd, 
-                                  int h)
+AikaPi::vc_mem_lock (int fd, 
+                     int h)
 {
-  VC_MSG msg = {.tag   = 0x3000d, 
-                .blen  = 4, 
-                .dlen  = 4, 
-                .uints = {static_cast<uint32_t>(h)}};
+  AP_VC_MSG msg = 
+  {
+    .tag   = 0x3000d, 
+    .blen  = 4, 
+    .dlen  = 4, 
+    .uints = 
+    {
+      static_cast<uint32_t>(h)
+    }
+ };
   
-  return (h ? (void *)msg_mbox (fd, &msg) : 0);
+  return (h ? (void *)mbox_msg (fd, &msg) : 0);
 }
 
-// Unlock allocated memory
+// Unlock buffer. It retains contents, but may move. 
+// Needs to be locked before next use. status=0 is success.
+// https://github.com/raspberrypi/firmware/wiki/Mailbox-property-interface#unlock-memory
 uint32_t 
-AikaPi::unlock_vc_mem (int fd, 
-                                    int h)
+AikaPi::vc_mem_unlock (int fd, 
+                       int h)
 {
-  VC_MSG msg = {.tag   = 0x3000e, 
-                .blen  = 4, 
-                .dlen  = 4, 
-                .uints = {static_cast<uint32_t>(h)}};
+  AP_VC_MSG msg = 
+  {
+    .tag   = 0x3000e, 
+    .blen  = 4, 
+    .dlen  = 4, 
+    .uints = 
+    {
+      static_cast<uint32_t>(h)
+    }
+  };
   
-  return(h ? msg_mbox(fd, &msg) : 0);
+  return (h ? mbox_msg (fd, &msg) : 0);
 }
 
-// Free memory
+// Free the memory buffer. status=0 is success.
+// https://github.com/raspberrypi/firmware/wiki/Mailbox-property-interface#release-memory
 uint32_t 
-AikaPi::free_vc_mem (int fd, 
-                                  int h)
+AikaPi::vc_mem_release (int fd, 
+                        int h)
 {
-  VC_MSG msg={.tag     = 0x3000f, 
-              .blen    = 4,
-              .dlen    = 4, 
-              .uints   = {static_cast<uint32_t>(h)}};
+  AP_VC_MSG msg = 
+  {
+    .tag     = 0x3000f, 
+    .blen    = 4,
+    .dlen    = 4, 
+    .uints   = 
+    {
+      static_cast<uint32_t>(h)
+    }
+  };
   
-  return(h ? msg_mbox(fd, &msg) : 0);
+  return (h ? mbox_msg (fd, &msg) : 0);
 }
 
 uint32_t 
@@ -452,20 +469,20 @@ AikaPi::fset_vc_clock (int      fd,
                                     int      id, 
                                     uint32_t freq)
 {
-  VC_MSG msg1 = {.tag   = 0x38001, 
+  AP_VC_MSG msg1 = {.tag   = 0x38001, 
                  .blen  = 8, 
                  .dlen  = 8, 
                  .uints = {static_cast<uint32_t>(id), 1}};
                  
-  VC_MSG msg2 = {.tag   = 0x38002, 
+  AP_VC_MSG msg2 = {.tag   = 0x38002, 
                  .blen  = 12,
                  .dlen  = 12,
                  .uints = {static_cast<uint32_t>(id), freq, 0}};
   
-  msg_mbox    (fd, &msg1);
+  mbox_msg    (fd, &msg1);
   disp_vc_msg (&msg1);
   
-  msg_mbox    (fd, &msg2);
+  mbox_msg    (fd, &msg2);
   disp_vc_msg (&msg2);
   
   return(0);
@@ -473,7 +490,7 @@ AikaPi::fset_vc_clock (int      fd,
 
 // Display mailbox message
 void 
-AikaPi::disp_vc_msg(VC_MSG *msgp)
+AikaPi::disp_vc_msg(AP_VC_MSG *msgp)
 {
     int i;
 
@@ -502,14 +519,14 @@ AikaPi::terminate (int sig)
   printf("Closing\n");
   
   spi_disable();
-  //dma_stop(LAB_OSCILLOSCOPE_DMA_CHAN_PWM_PACING);
-  //dma_stop(LAB_OSCILLOSCOPE_DMA_CHAN_SPI_RX);
-  //dma_stop(LAB_OSCILLOSCOPE_DMA_CHAN_SPI_TX);
+  //dma_reset(LAB_OSCILLOSCOPE_DMA_CHAN_PWM_PACING);
+  //dma_reset(LAB_OSCILLOSCOPE_DMA_CHAN_SPI_RX);
+  //dma_reset(LAB_OSCILLOSCOPE_DMA_CHAN_SPI_TX);
   
   // unmap_periph_mem (&m_vc_mem);
   unmap_periph_mem (&m_regs_usec);
   unmap_periph_mem (&m_regs_pwm);
-  unmap_periph_mem (&m_clk_regs);
+  unmap_periph_mem (&m_regs_clk);
   unmap_periph_mem (&m_regs_spi);
   unmap_periph_mem (&m_regs_dma);
   unmap_periph_mem (&m_regs_gpio);
@@ -1182,60 +1199,29 @@ gpio_mode (unsigned pin)
 
 // --- PWM ---
 // Initialise PWM
-void 
-AikaPi::pwm_init (int freq, 
-                               int range, 
-                               int val)
+int 
+AikaPi::pwm_init (unsigned channel,
+                  double   source_freq, 
+                  int      range, 
+                  int      val)
 {
-  pwm_stop();
+  if (channel == 1 || channel == 2)
+  {
+    pwm_reset (channel);
 
-  // check channel 1 state
-  if (*REG32(m_regs_pwm, PWM_STA) & 0x100)
-    {
-      printf("PWM bus error\n");
-      *REG32(m_regs_pwm, PWM_STA) = 0x100;
-    }
+    cm_pwm_frequency (source_freq, CM_PWM_MASH_1STAGE);
 
-  #if USE_VC_CLOCK_SET
-    set_vc_clock(mbox_fd, PWM_CLOCK_ID, freq);
-  #else
-    // see the BCM2385 Audio Clocks datasheet PDF for reference.
-    // this is how to change PWM clock speed
-    int divi = CLOCK_HZ / freq;
+    *REG32(m_regs_pwm, PWM_RNG1) = range;
+    *REG32(m_regs_pwm, PWM_FIF1) = val;
 
-    // CLK_PASSWD is "5a" as written on datasheet
-    // https://www.scribd.com/doc/127599939/BCM2835-Audio-clocks#download
+    gpio_set(PWM_PIN, GPIO_ALT0, GPIO_PULL_DOWN);
 
-    // max PWM operating frequency is 25MHz as written on datasheet
-
-    // 1 << 5 = KILL: kill the clock generator
-    // this line stops the clock generator
-    *REG32(m_clk_regs, CLK_PWM_CTL) = CLK_PASSWD | (1 << 5);
-
-    // 1 << 7 = BUSY: Clock generator is running
-    // this line waits for BUSY to 0, or for clock generator to stop
-    while (*REG32(m_clk_regs, CLK_PWM_CTL) & (1 << 7)) ;
-
-    // divi << 12 = DIVI: Integer part of divisor
-    // assign divisor to DIVI field
-    *REG32(m_clk_regs, CLK_PWM_DIV) = CLK_PASSWD | (divi << 12);
-
-    // 1 << 4 = ENAB: Enable the clock generator
-    // this line asserts ENAB to enable the clock generator
-    *REG32(m_clk_regs, CLK_PWM_CTL) = CLK_PASSWD | 6 | (1 << 4);
-
-    // // 1 << 7 = BUSY: Clock generator is running
-    // this line waits until BUSY is 1, this means clock generator is running
-    while ((*REG32(m_clk_regs, CLK_PWM_CTL) & (1 << 7)) == 0) ;
-  #endif
-
-
-  usleep(100);
-  *REG32(m_regs_pwm, PWM_RNG1) = range;
-  *REG32(m_regs_pwm, PWM_FIF1) = val;
-  usleep(100);
-
-  gpio_set(PWM_PIN, GPIO_ALT0, GPIO_PULL_DOWN);
+    return channel;
+  }
+  else 
+  {
+    return -1;
+  }
 }
 
 // Start PWM operation
@@ -1254,56 +1240,211 @@ AikaPi::pwm_stop ()
   // usleep (100);
 }
 
-void
-AikaPi::pwm_set_frequency (float frequency)
+// For more information, see this addendum: 
+// https://www.scribd.com/doc/127599939/BCM2835-Audio-clocks
+// Max PWM operating frequency is 25MHz as written on datasheet
+
+double
+AikaPi::pwm_frequency (double value, double duty_cycle)
 {
-  pwm_stop();
+  if (duty_cycle >= 0 && duty_cycle <= 100)
+  {
+    pwm_stop();
 
-  uint32_t range = (m_pwm_frequency * 2) / (frequency * 4);
+    double temp_range = (m_pwm_freq) / (value * 2.0);
+    double temp_data  = temp_range * (duty_cycle / 100.0);
 
-  // check channel 1 state
-  if (*REG32(m_regs_pwm, PWM_STA) & 0x100)
-    {
-      printf("PWM bus error\n");
-      *REG32(m_regs_pwm, PWM_STA) = 0x100;
-    }
+    printf ("m_pwm_freq: %9.12f\n", m_pwm_freq);
+    printf ("temp_range: %9.12f\n", temp_range);
+    printf ("temp_data: %9.12f\n", temp_data);
 
-  // see the BCM2385 Audio Clocks datasheet PDF for reference.
-  // this is how to change PWM clock speed
-  int divi = CLOCK_HZ / m_pwm_frequency;
+    *(Utility::get_reg32 (m_regs_pwm, PWM_RNG1)) = static_cast<uint32_t>(temp_range);
+    *(Utility::get_reg32 (m_regs_pwm, PWM_FIF1)) = static_cast<uint32_t>(temp_data);
 
-  // CLK_PASSWD is "5a" as written on datasheet
-  // https://www.scribd.com/doc/127599939/BCM2835-Audio-clocks#download
+    pwm_start ();
 
-  // max PWM operating frequency is 25MHz as written on datasheet
-
-  // 1 << 5 = KILL: kill the clock generator
-  // this line stops the clock generator
-  *REG32(m_clk_regs, CLK_PWM_CTL) = CLK_PASSWD | (1 << 5);
-
-  // 1 << 7 = BUSY: Clock generator is running
-  // this line waits for BUSY to 0, or for clock generator to stop
-  while (*REG32(m_clk_regs, CLK_PWM_CTL) & (1 << 7)) ;
-
-  // divi << 12 = DIVI: Integer part of divisor
-  // assign divisor to DIVI field
-  *REG32(m_clk_regs, CLK_PWM_DIV) = CLK_PASSWD | (divi << 12);
-
-  // 1 << 4 = ENAB: Enable the clock generator
-  // this line asserts ENAB to enable the clock generator
-  *REG32(m_clk_regs, CLK_PWM_CTL) = CLK_PASSWD | 6 | (1 << 4);
-
-  // // 1 << 7 = BUSY: Clock generator is running
-  // this line waits until BUSY is 1, this means clock generator is running
-  while ((*REG32(m_clk_regs, CLK_PWM_CTL) & (1 << 7)) == 0) ;
-
-  usleep(1000);
-  *REG32(m_regs_pwm, PWM_RNG1) = range;
-  *REG32(m_regs_pwm, PWM_FIF1) = m_pwm_value;
-  usleep(1000);
-
-  pwm_start ();
+    return 0;
+  }
+  else 
+  {
+    return -1;
+  }
 }
+
+int
+AikaPi::pwm_enable (unsigned channel, 
+                    bool     value)
+{
+  if (channel == 1 || channel == 2)
+  {
+    Utility::reg_write (Utility::get_reg32 (m_regs_pwm, PWM_CTL), value, 1,
+      (channel == 2) ? 8 : 0);
+
+    return value;
+  }
+  else 
+  {
+    return -1;
+  }
+}
+
+int 
+AikaPi::pwm_mode (unsigned channel,
+                  int      value)
+{
+  if ((channel == 1 || channel == 2) & (value == 0 || value == 1))
+  {
+    Utility::reg_write (Utility::get_reg32 (m_regs_pwm, PWM_CTL), value, 1,
+      (channel == 2) ? 9 : 1);
+
+    return value;
+  }
+  else 
+  {
+    return -1;
+  }
+}
+
+// 0: transmission interrupts when FIFO is empty
+// 1: last data in FIFO is transmitted repeatedly until FIFO is not empty
+int       
+AikaPi::pwm_repeat_last_data  (unsigned channel, 
+                               bool     value)
+{
+  if (channel == 1 || channel == 2)
+  {
+    Utility::reg_write (Utility::get_reg32 (m_regs_pwm, PWM_CTL), value, 1,
+      (channel == 2) ? 10 : 2);
+
+    return value;
+  }
+  else 
+  {
+    return -1;
+  }
+}
+
+// 0: data register is transmitted
+// 1: FIFO is used for transmission
+int       
+AikaPi::pwm_use_fifo  (unsigned channel, 
+                       bool     value)
+{
+  if (channel == 1 || channel == 2)
+  {
+    Utility::reg_write (Utility::get_reg32 (m_regs_pwm, PWM_CTL), value, 1,
+      (channel == 2) ? 13 : 5);
+
+    return value;
+  }
+  else 
+  {
+    return -1;
+  }
+}
+
+// 0: channel is not currently transmitting
+// 1: channel is transmitting data
+bool       
+AikaPi::pwm_channel_state (unsigned channel)
+{
+  if (channel >= 1 && channel <=4)
+  {
+    return (Utility::get_bits (*(Utility::get_reg32 (m_regs_pwm, PWM_STA)), 
+      8 + channel, 1));
+  }
+  else 
+  {
+    return -1;
+  }
+}
+
+int
+AikaPi::pwm_fifo (uint32_t value)
+{
+  *(Utility::get_reg32 (m_regs_pwm, PWM_FIF1)) = value;
+
+  return 0;
+}
+
+int 
+AikaPi::pwm_range (unsigned channel, 
+                   uint32_t value)
+{
+  if (channel == 1 || channel == 2)
+  {
+    *(Utility::get_reg32 (m_regs_pwm, (channel == 2) ? PWM_RNG2 : PWM_RNG1)) = value;
+
+    return value;
+  }
+  else 
+  {
+    return -1;
+  }
+}
+
+// Set the Control, Range, and Data registers of the PWM channel to 0
+int
+AikaPi::pwm_reset (unsigned channel)
+{
+  if (channel == 1 || channel == 2)
+  {
+    *(Utility::get_reg32 (m_regs_pwm, PWM_CTL)) = 0;
+
+    pwm_range (channel, 0);
+  }
+  else 
+  {
+    return -1;
+  }
+
+  return channel;
+}
+
+// --- Clock Manager Audio Clocks ---
+
+// Set the PWM clock frequency
+double AikaPi::
+cm_pwm_frequency (double value)
+{
+  // default to using CM_PWM_MASH_1STAGE
+  cm_pwm_frequency (value, CM_PWM_MASH_1STAGE);
+}
+
+double AikaPi::
+cm_pwm_frequency (double value, uint32_t mash)
+{
+  volatile uint32_t *reg = Utility::get_reg32 (m_regs_clk, CM_PWMCTL);
+  volatile uint32_t *div = Utility::get_reg32 (m_regs_clk, CM_PWMDIV);
+
+  m_pwm_freq = value;
+
+  double divisor = static_cast<double>(CLOCK_HZ) / value;
+
+  // 1.) Kill the clock generator
+  *reg = CM_PASSWD | (1 << 5);
+
+  // 2.) Wait for clock generator to actually be stopped by checking BUSY flag
+  while (Utility::get_bits (*reg, 7, 1));
+
+  // 3.) Load the divisor (integral and fractional part)
+  double integral;
+  double fractional_f = std::modf (divisor, &integral);
+  int    fractional_i = fractional_f * std::pow (10, 6);
+
+  *div = CM_PASSWD | ((static_cast<int>(integral) & 0xFFF) << 12) | 
+    (fractional_i & 0xFFF);
+
+  // 3.) Configure the MASH control, clock source to be PLLD per (6), 
+  //     and enable the clock generator
+  *reg = CM_PASSWD | (mash << 9) | 6 | (1 << 4);
+  
+  // 5.) Wait for clock generator to actually be running by checking ENAB flag
+  while (!Utility::get_bits (*reg, 7, 1));
+
+  return (m_pwm_freq);
+}
+
 
 
 // --- FIFO ---
