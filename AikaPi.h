@@ -569,8 +569,6 @@ class AikaPi
     void      bb_spi_set_SCLK    (Pin_Info *pi);
     void      bb_spi_clear_SCLK  (Pin_Info *pi);
 
-
-
     // --- Utility Peripherals ---
     void aux_spi1_master_enable ();
     void aux_spi1_master_disable ();

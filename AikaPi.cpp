@@ -1103,7 +1103,7 @@ aux_spi_xfer (uint8_t  channel,
     *rxbuff++ = *(Utility::get_reg32 (m_aux_regs, AUX_SPI0_PEEK_REG));
   }
 
-  // deaasert CE pin
+  // deassert CE pin
 }
 
 void AikaPi:: 
@@ -1184,7 +1184,7 @@ AikaPi::gpio_read (int pin)
 {
   volatile uint32_t *reg = Utility::get_reg32 (m_regs_gpio, GPIO_LEV0) + (pin / 32);
 
-  return (((*reg) >> (pin % 32)) & 1);
+  return ((*reg >> (pin % 32)) & 1);
 }
 
 uint32_t AikaPi:: 
@@ -1409,6 +1409,8 @@ cm_pwm_frequency (double value)
 {
   // default to using CM_PWM_MASH_1STAGE
   cm_pwm_frequency (value, CM_PWM_MASH_1STAGE);
+
+  return CM_PWM_MASH_1STAGE;
 }
 
 double AikaPi::
