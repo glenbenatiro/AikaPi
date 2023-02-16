@@ -7,7 +7,7 @@
 // Link to the BCM2385 datasheet:
 // // https://www.raspberrypi.org/app/uploads/2012/02/BCM2835-ARM-Peripherals.pdf
 
-#define RPI_VERSION  3
+#define RPI_VERSION  0
 
 #if RPI_VERSION == 0
   #define PHYS_REG_BASE PI_01_REG_BASE
@@ -245,7 +245,7 @@ constexpr unsigned PAGE_SIZE = 0x1000;
 
 
 // --- PWM ---
-constexpr int PWM_VALUE = 2;
+constexpr double PWM_VALUE = 2.0;
 
 constexpr int PWM_BASE  = (PHYS_REG_BASE + 0x20C000);
 constexpr int PWM_CTL   = 0x00;   // Control
@@ -595,7 +595,7 @@ class AikaPi
     void aux_spi_write  (uint8_t channel, char *txbuff,               uint8_t count);
 
     // --- PWM ---
-    int     pwm_init              (unsigned channel, double source_freq, int range, int val);
+    int     pwm_init              (unsigned channel, double source_freq, uint32_t range, uint32_t val);
     void    pwm_start             ();
     void    pwm_stop              ();
     double  pwm_frequency         (double value, double duty_cycle);

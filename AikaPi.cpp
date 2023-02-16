@@ -1202,8 +1202,8 @@ gpio_mode (unsigned pin)
 int 
 AikaPi::pwm_init (unsigned channel,
                   double   source_freq, 
-                  int      range, 
-                  int      val)
+                  uint32_t range, 
+                  uint32_t val)
 {
   if (channel == 1 || channel == 2)
   {
@@ -1251,12 +1251,13 @@ AikaPi::pwm_frequency (double value, double duty_cycle)
   {
     pwm_stop();
 
-    double temp_range = (m_pwm_freq) / (value * 2.0);
-    double temp_data  = temp_range * (duty_cycle / 100.0);
+    double temp_range = (m_pwm_freq * 2.0) / (value);
+    //double temp_data  = temp_range * (duty_cycle / 100.0);
+    int temp_data = 2;
 
-    printf ("m_pwm_freq: %9.12f\n", m_pwm_freq);
-    printf ("temp_range: %9.12f\n", temp_range);
-    printf ("temp_data: %9.12f\n", temp_data);
+    // printf ("m_pwm_freq: %9.12f\n", m_pwm_freq);
+    // printf ("temp_range: %9.12f\n", temp_range);
+    // printf ("temp_data: %9.12f\n", temp_data);
 
     *(Utility::get_reg32 (m_regs_pwm, PWM_RNG1)) = static_cast<uint32_t>(temp_range);
     *(Utility::get_reg32 (m_regs_pwm, PWM_FIF1)) = static_cast<uint32_t>(temp_data);
