@@ -5,6 +5,7 @@
 #include <mutex>
 #include <bitset>
 #include <iostream>
+#include <map>
 
 // Link to the BCM2385 datasheet:
 // // https://www.raspberrypi.org/app/uploads/2012/02/BCM2835-ARM-Peripherals.pdf
@@ -137,6 +138,18 @@ enum AP_CM_CLK_SRC
   AP_CM_CLK_SRC_HDMI_AUXILIARY  = 7
 };
 
+const std::map <AP_CM_CLK_SRC, double> AP_CM_CLK_SRC_FREQ =
+{
+  {AP_CM_CLK_SRC_GND,             0.0},
+  {AP_CM_CLK_SRC_OSCILLATOR,      19'200'000.0},
+  {AP_CM_CLK_SRC_TESTDEBUG0,      0.0},
+  {AP_CM_CLK_SRC_TESTDEBUG1,      0.0},
+  {AP_CM_CLK_SRC_PLLA,            0.0},
+  {AP_CM_CLK_SRC_PLLC,            1'000'000'000.0},
+  {AP_CM_CLK_SRC_PLLD,            500'000'000.0},
+  {AP_CM_CLK_SRC_HDMI_AUXILIARY,  216'000'000.0},
+};
+
 enum AP_CM_CLK_MASH
 {
   AP_CM_CLK_MASH_INTEGER = 0,
@@ -144,6 +157,11 @@ enum AP_CM_CLK_MASH
   AP_CM_CLK_MASH_2STAGE  = 2,
   AP_CM_CLK_MASH_3STAGE  = 3
 };
+
+constexpr AP_CM_CLK_SRC   AP_CM_PWM_CLK_SRC   = AP_CM_CLK_SRC_PLLD;
+constexpr AP_CM_CLK_MASH  AP_CM_PWM_CLK_MASH  = AP_CM_CLK_MASH_1STAGE;  
+
+
 
 // --- General Raspberry Pi ---
 constexpr int PI_MAX_USER_GPIO  = 31;
@@ -287,6 +305,13 @@ constexpr unsigned PAGE_SIZE = 0x1000;
 
 
 // --- PWM ---
+enum AP_PWM_ALGO
+{
+  AP_PWM_ALGO_BALANCED  = 0,
+  AP_PWM_ALGO_MARKSPACE = 1
+};
+
+constexpr double AP_PWM_CLK_SRC_FREQ = 100'000'000.0;
 constexpr double PWM_VALUE = 2.0;
 
 constexpr int PWM_BASE  = (PHYS_REG_BASE + 0x20C000);
@@ -485,7 +510,8 @@ class AikaPi
     int m_pwm_value       = 10;
 
     double m_pwm_freq         = 0.0;
-    double m_cm_pwm_clk_freq  = 0.0;
+    double m_pwm_clk_src_freq = 0.0;
+    double m_pwm_range        = 0.0;
 
     Pin_Info m_pin_info [PI_MAX_USER_GPIO + 1];
 
@@ -503,8 +529,7 @@ class AikaPi
   public:
     int   m_fifo_fd = 0;
 
-    uint32_t m_pwm_range,  
-             m_fifo_size;
+    uint32_t m_fifo_size;
 
 
     AikaPi ();
@@ -558,8 +583,8 @@ class AikaPi
     uint32_t  dma_transfer_len (int chan);
     
     // --- GPIO ---
-    void      AP_gpio_set    (unsigned pin, AP_GPIO_FUNC _AP_GPIO_FUNC, AP_GPIO_PULL _AP_GPIO_PULL);
-    void      AP_gpio_set    (unsigned pin, AP_GPIO_FUNC _AP_GPIO_FUNC, AP_GPIO_PULL _AP_GPIO_PULL, bool value);
+    void      gpio_set    (unsigned pin, AP_GPIO_FUNC _AP_GPIO_FUNC, AP_GPIO_PULL _AP_GPIO_PULL);
+    void      gpio_set    (unsigned pin, AP_GPIO_FUNC _AP_GPIO_FUNC, AP_GPIO_PULL _AP_GPIO_PULL, bool value);
     void      AP_gpio_func   (unsigned pin, AP_GPIO_FUNC _AP_GPIO_FUNC);
     void      AP_gpio_pull   (unsigned pin, AP_GPIO_PULL _AP_GPIO_PULL);
     bool      AP_gpio_read   (unsigned pin);
@@ -615,10 +640,13 @@ class AikaPi
     void aux_spi_write  (uint8_t channel, char *txbuff,               uint8_t count);
 
     // --- PWM ---
-    int     pwm_init (unsigned channel, double pwm_frequency, AP_CM_CLK_SRC _AP_CM_CLK_SRC = AP_CM_CLK_SRC_PLLD, double pwm_src_clk_freq = 1'000'000);
-    void    pwm_start             ();
-    void    pwm_stop              ();
-    double  pwm_frequency         (double value, double duty_cycle);
+    int pwm_init (double          pwm_freq, 
+                  double          pwm_clk_src_freq  = AP_PWM_CLK_SRC_FREQ, 
+                  AP_CM_CLK_SRC   _AP_CM_CLK_SRC    = AP_CM_PWM_CLK_SRC, 
+                  AP_CM_CLK_MASH  _AP_CM_CLK_MASH   = AP_CM_PWM_CLK_MASH);
+
+    
+    
     int     pwm_enable            (unsigned channel, bool value);
     int     pwm_mode              (unsigned channel, int value);
     int     pwm_repeat_last_data  (unsigned channel, bool value);
@@ -627,10 +655,22 @@ class AikaPi
     int     pwm_fifo              (uint32_t value);
     int     pwm_range             (unsigned channel, uint32_t value);
     int     pwm_reset             ();
+    void    pwm_fifo_clear        ();
+    int     pwm_start             (unsigned channel);
+    int     pwm_stop              (unsigned channel);
+
+    void    pwm_algo        (unsigned channel, AP_PWM_ALGO _AP_PWM_ALGO);
+    double  pwm_frequency   (unsigned channel, double frequency);
+    double  pwm_duty_cycle  (unsigned channel, double duty_cycle);
+    
 
     // --- Clock Manager Audio Clocks ---
     void    cm_pcm_clk_stop ();
     void    cm_pcm_clk_run  ();
+    
+    int     cm_pwm_clk_init (double         pwm_clk_src_freq  = AP_PWM_CLK_SRC_FREQ, 
+                            AP_CM_CLK_SRC   _AP_CM_CLK_SRC    = AP_CM_PWM_CLK_SRC, 
+                            AP_CM_CLK_MASH  _AP_CM_CLK_MASH   = AP_CM_PWM_CLK_MASH);
 
     bool    cm_pwm_clk_is_running ();
     double  cm_pwm_clk_divisor    ();

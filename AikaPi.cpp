@@ -561,11 +561,11 @@ int AikaPi::
 spi_init (double frequency)
 {
   // initialize spi gpio pins on rpi
-  AP_gpio_set (SPI0_CE0_PIN,  AP_GPIO_FUNC_ALT0, AP_GPIO_PULL_OFF);
-  AP_gpio_set (SPI0_CE1_PIN,  AP_GPIO_FUNC_ALT0, AP_GPIO_PULL_OFF);
-  AP_gpio_set (SPI0_MISO_PIN, AP_GPIO_FUNC_ALT0, AP_GPIO_PULL_UP);
-  AP_gpio_set (SPI0_MOSI_PIN, AP_GPIO_FUNC_ALT0, AP_GPIO_PULL_OFF);
-  AP_gpio_set (SPI0_SCLK_PIN, AP_GPIO_FUNC_ALT0, AP_GPIO_PULL_OFF);
+  gpio_set (SPI0_CE0_PIN,  AP_GPIO_FUNC_ALT0, AP_GPIO_PULL_OFF);
+  gpio_set (SPI0_CE1_PIN,  AP_GPIO_FUNC_ALT0, AP_GPIO_PULL_OFF);
+  gpio_set (SPI0_MISO_PIN, AP_GPIO_FUNC_ALT0, AP_GPIO_PULL_UP);
+  gpio_set (SPI0_MOSI_PIN, AP_GPIO_FUNC_ALT0, AP_GPIO_PULL_OFF);
+  gpio_set (SPI0_SCLK_PIN, AP_GPIO_FUNC_ALT0, AP_GPIO_PULL_OFF);
 
   // clear tx and rx fifo. one shot operation
   spi_clear_fifo ();
@@ -907,10 +907,10 @@ aux_spi1_master_disable ()
 void AikaPi:: 
 aux_spi0_init ()
 {
-  AP_gpio_set (SPI1_SCLK_PIN,  AP_GPIO_FUNC_ALT4, AP_GPIO_PULL_OFF);
-  AP_gpio_set (SPI1_MOSI_PIN,  AP_GPIO_FUNC_ALT4, AP_GPIO_PULL_OFF);
-  AP_gpio_set (SPI1_MISO_PIN,  AP_GPIO_FUNC_ALT4, AP_GPIO_PULL_UP);
-  AP_gpio_set (SPI1_CE2_PIN,   AP_GPIO_FUNC_ALT4, AP_GPIO_PULL_OFF);
+  gpio_set (SPI1_SCLK_PIN,  AP_GPIO_FUNC_ALT4, AP_GPIO_PULL_OFF);
+  gpio_set (SPI1_MOSI_PIN,  AP_GPIO_FUNC_ALT4, AP_GPIO_PULL_OFF);
+  gpio_set (SPI1_MISO_PIN,  AP_GPIO_FUNC_ALT4, AP_GPIO_PULL_UP);
+  gpio_set (SPI1_CE2_PIN,   AP_GPIO_FUNC_ALT4, AP_GPIO_PULL_OFF);
 
   aux_spi1_master_enable ();
   aux_spi0_enable ();
@@ -1137,7 +1137,7 @@ aux_spi_write (uint8_t  channel,
 
 // --- GPIO ---
 void AikaPi::
-AP_gpio_set (unsigned pin, 
+gpio_set (unsigned pin, 
              AP_GPIO_FUNC _AP_GPIO_FUNC, 
              AP_GPIO_PULL _AP_GPIO_PULL)
 {
@@ -1146,7 +1146,7 @@ AP_gpio_set (unsigned pin,
 }
 
 void AikaPi::
-AP_gpio_set (unsigned pin, 
+gpio_set (unsigned pin, 
              AP_GPIO_FUNC _AP_GPIO_FUNC, 
              AP_GPIO_PULL _AP_GPIO_PULL,
              bool value)
@@ -1211,90 +1211,76 @@ AP_gpio_func (unsigned pin)
 
 
 // --- PWM ---
-// Initialise PWM
+// Initialise PWMs
 int AikaPi:: 
-pwm_init (unsigned      channel,
-          double        pwm_frequency,
-          AP_CM_CLK_SRC _AP_CM_CLK_SRC,
-          double        pwm_src_clk_freq)
+pwm_init (double          pwm_freq,
+          double          pwm_src_clk_freq,
+          AP_CM_CLK_SRC   _AP_CM_CLK_SRC,
+          AP_CM_CLK_MASH  _AP_CM_CLK_MASH)
 {
-  if (pwm_frequency <= pwm_src_clk_freq)
+  pwm_reset ();
+
+  cm_pwm_clk_init (pwm_src_clk_freq, _AP_CM_CLK_SRC, _AP_CM_CLK_MASH);
+
+  // set frequency
+  pwm_frequency (0, pwm_freq);
+  pwm_frequency (1, pwm_freq);
+
+  // set duty cycle
+  pwm_duty_cycle (0, 50.0);
+
+  return 1;
+}
+
+// Start PWM operation
+int AikaPi::
+pwm_start (unsigned channel)
+{
+  if (channel == 0)
   {
-    m_pwm_freq = pwm_src_clk_freq;
+    *(Utility::get_reg32 (m_regs_pwm, PWM_CTL)) |=  (1 << 2) | (1 << 0);
 
-    pwm_reset ();
-
-    cm_pwm_clk_freq (pwm_src_clk_freq);
-
-    AP_gpio_set (PWM_PIN, AP_GPIO_FUNC_ALT0, AP_GPIO_PULL_DOWN);
-
-    double range = pwm_src_clk_freq / pwm_frequency;
-
-    *REG32(m_regs_pwm, PWM_RNG1) = static_cast<uint32_t>(range);
-    *REG32(m_regs_pwm, PWM_FIF1) = 2;    
+    return 1;
+  }
+  else if (channel == 1)
+  {
+    *(Utility::get_reg32 (m_regs_pwm, PWM_CTL)) |= (1 << 13) | (1 << 8);
 
     return 1;
   }
   else 
   {
-    return -1;
+    return 0;
   }
 }
 
-// Start PWM operation
-void 
-AikaPi::pwm_start ()
-{
-  *REG32(m_regs_pwm, PWM_CTL) = PWM_CTL_USEF1 | PWM_ENAB;
-  // usleep(1000);
-
-  printf ("pwm start\n");
-}
-
 // Stop PWM operation
-void 
-AikaPi::pwm_stop ()
+int AikaPi::
+pwm_stop (unsigned channel)
 {
-  *(Utility::get_reg32 (m_regs_pwm, PWM_CTL)) = 0;
-  // usleep (100);
+  if (channel == 0)
+  {
+    Utility::reg_write (Utility::get_reg32 (m_regs_pwm, PWM_CTL), 0, 1, 0);
+
+    return 1;
+  }
+  else if (channel == 1)
+  {
+    Utility::reg_write (Utility::get_reg32 (m_regs_pwm, PWM_CTL), 0, 1, 8);
+
+    return 1;
+  }
+  else 
+  {
+    return 0;
+  }
 }
 
 // For more information, see this addendum: 
 // https://www.scribd.com/doc/127599939/BCM2835-Audio-clocks
 // Max PWM operating frequency is 25MHz as written on datasheet
 
-double
-AikaPi::pwm_frequency (double value, double duty_cycle)
-{
-  if (duty_cycle >= 0 && duty_cycle <= 100)
-  {
-    pwm_stop();
-    
-    //assume the current PWM clock source is 500MHz (PLLD)
-    //then divisor is 5. therefore PWM clock = 100MHz
 
-    double temp_range = ((500'000'000 / 500) / value);
-    //double temp_data  = temp_range * (duty_cycle / 100.0);
-    int temp_data = 2;
-
-    // printf ("m_pwm_freq: %9.12f\n", m_pwm_freq);
-    // printf ("temp_range: %9.12f\n", temp_range);
-    // printf ("temp_data: %9.12f\n", temp_data);
-
-    *(Utility::get_reg32 (m_regs_pwm, PWM_RNG1)) = static_cast<uint32_t>(temp_range);
-    *(Utility::get_reg32 (m_regs_pwm, PWM_FIF1)) = static_cast<uint32_t>(temp_data);
-
-
-
-    pwm_start ();
-
-    return 0;
-  }
-  else 
-  {
-    return -1;
-  }
-}
 
 int
 AikaPi::pwm_enable (unsigned channel, 
@@ -1412,12 +1398,74 @@ AikaPi::pwm_range (unsigned channel,
 int
 AikaPi::pwm_reset ()
 {
-  *Utility::get_reg32 (m_regs_pwm, PWM_CTL) = 0x00000000;
-  *Utility::get_reg32 (m_regs_pwm, PWM_STA) = 0x000001FE;
-  *Utility::get_reg32 (m_regs_pwm, PWM_RNG1) - 0x00000020;
+  *Utility::get_reg32 (m_regs_pwm, PWM_CTL)   = 0x00000040;
+  *Utility::get_reg32 (m_regs_pwm, PWM_STA)   = 0x000001FE;
+  *Utility::get_reg32 (m_regs_pwm, PWM_RNG1)  = 0x00000020;
 
   return 1;
 }
+
+void AikaPi:: 
+pwm_fifo_clear ()
+{
+  *(Utility::get_reg32 (m_regs_pwm, PWM_CTL)) |= (1 << 6);
+}
+
+void AikaPi:: 
+pwm_algo (unsigned    channel,
+          AP_PWM_ALGO _AP_PWM_ALGO)
+{
+  Utility::reg_write (Utility::get_reg32 (m_regs_pwm, PWM_CTL), _AP_PWM_ALGO,
+    1, (channel == 0 ? 7 : 15));
+}
+
+double AikaPi::
+pwm_frequency (unsigned channel,
+               double   frequency)
+{
+  if (frequency >= 0 || channel == 0 || channel == 1)
+  {
+    m_pwm_range = m_pwm_clk_src_freq / frequency;
+
+    *(Utility::get_reg32 (m_regs_pwm, (channel == 0 ? PWM_RNG1 : PWM_RNG2))) = 
+      static_cast<uint32_t>(m_pwm_range);
+
+    std::cout << "m_pwm_clk_src_freq: " << m_pwm_clk_src_freq << "\n";
+    std::cout << "range: " << m_pwm_range << "\n";
+
+    return frequency;
+  }
+  else 
+  {
+    return -1;
+  }
+}
+
+double AikaPi::
+pwm_duty_cycle (unsigned  channel, 
+                double    duty_cycle)
+{
+  if (duty_cycle >= 0 || channel == 0 || channel == 1)
+  {
+    double dc_percentage = (std::fmod (duty_cycle, 100.0)) / (100.0);
+    double fifo_data = m_pwm_range * dc_percentage;
+
+    *(Utility::get_reg32 (m_regs_pwm, PWM_DAT1)) = fifo_data;
+
+    std::cout << "duty cycle per: " << dc_percentage << "\n";
+    std::cout << "fifo data: " << fifo_data << "\n";
+
+    return dc_percentage;
+  }
+  else 
+  {
+    return -1;
+  }
+}
+
+
+
+
 
 // --- Clock Manager Audio Clocks ---
 void AikaPi:: 
@@ -1453,7 +1501,7 @@ cm_pwm_clk_divisor ()
 void AikaPi:: 
 cm_pwm_clk_stop ()
 {
-   volatile uint32_t *reg = Utility::get_reg32 (m_regs_cm, CM_PWMCTL);
+  volatile uint32_t *reg = Utility::get_reg32 (m_regs_cm, CM_PWMCTL);
 
   *reg = (CM_PASSWD) | (1 << 5);
 
@@ -1509,6 +1557,44 @@ cm_pwm_clk_src (AP_CM_CLK_SRC _AP_CM_CLK_SRC)
 }
 
 int AikaPi:: 
+cm_pwm_clk_init (double         pwm_clk_src_freq, 
+                 AP_CM_CLK_SRC  _AP_CM_CLK_SRC, 
+                 AP_CM_CLK_MASH _AP_CM_CLK_MASH)
+{
+  volatile uint32_t *reg = Utility::get_reg32 (m_regs_cm, CM_PWMCTL);
+  volatile uint32_t *div = Utility::get_reg32 (m_regs_cm, CM_PWMDIV);
+
+  m_pwm_clk_src_freq = pwm_clk_src_freq;
+
+  // 1.) Stop the clock generator
+  *reg = (CM_PASSWD) | (1 << 5);
+
+  // 2.) Wait until clock generator is stopped by checking BUSY flag
+  while (((*reg) >> 7) & 0x1);
+
+  // 3.) Calculate the divisor, given the PWM source clock frequency 
+  //     from the given PWM clock source (AP_CM_CLK_SRC)
+  double divisor = (AP_CM_CLK_SRC_FREQ.at (_AP_CM_CLK_SRC)) / pwm_clk_src_freq;
+
+  double integral;
+  double fractional = std::modf (divisor, &integral);
+
+  fractional = fractional * std::pow (10, 12);
+
+  // 4.) Set the divisor integral and fractional parts
+  *div = (CM_PASSWD) | (static_cast<uint32_t>(integral) & 0xfff) << 12 |
+    (static_cast<uint32_t>(fractional) & 0xfff);
+
+  // 5.) Set the clock source, clock MASH, and enable the clock
+  *reg = (CM_PASSWD) | (_AP_CM_CLK_MASH << 9) | (1 << 4) | (_AP_CM_CLK_SRC << 0);
+
+  // 6.) Wait for the clock generator to be actually running by checking BUSY flag
+  while ((((*reg) >> 7) & 0x1) == 0);
+  
+  return 1;
+}
+
+int AikaPi:: 
 cm_pwm_clk_mash (AP_CM_CLK_MASH _AP_CM_CLK_MASH)
 {
   if (cm_pwm_clk_is_running ())
@@ -1538,7 +1624,7 @@ cm_pwm_clk_freq (double value)
   {
     volatile uint32_t *reg = Utility::get_reg32 (m_regs_cm, CM_PWMDIV);
 
-    m_cm_pwm_clk_freq = value;
+    m_pwm_clk_src_freq = value;
 
     // for now, this is 500MHz for PLLD.
     // change this soon.
@@ -1554,14 +1640,17 @@ cm_pwm_clk_freq (double value)
     printf ("fractional: %9.12f\n", fractional);
     //
 
-    *reg = CM_PASSWD | (static_cast<uint32_t>(integral) & 0xfff) << 12 |
-      static_cast<uint32_t>(fractional) & 0xfff;
+    
     
     std::this_thread::sleep_for (std::chrono::microseconds (100));
     
     return value;
   }
 }
+
+
+
+
 
 // --- FIFO ---
 int      
