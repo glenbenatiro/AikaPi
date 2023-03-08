@@ -6,6 +6,7 @@
 #include <chrono>
 #include <cstdio>
 #include <cmath>
+#include <cstdint>
 
 #include <fcntl.h>
 #include <unistd.h>
@@ -23,7 +24,7 @@ get_bits (uint32_t input, unsigned shift, uint32_t mask)
 }
 
 void Utility:: 
-reg_write (MemoryMap mem_map, 
+reg_write (AP_MemoryMap mem_map, 
            uint32_t  offset, 
            uint32_t  value, 
            uint32_t  mask, 
@@ -65,9 +66,6 @@ print_bits (int      bits,
 AikaPi::AikaPi ()
 {
   map_devices ();
- 
-  // spi_init (SPI_FREQUENCY);
-  // aux_spi0_init ();
 }
 
 AikaPi::~AikaPi ()
@@ -84,7 +82,7 @@ delay (uint32_t microseconds)
 
 // Allocate uncached memory, get bus & phys addresses
 void*
-AikaPi::map_uncached_mem (MemoryMap *mp,
+AikaPi::map_uncached_mem (AP_MemoryMap *mp,
                           int        size)
 {
   void *ret;
@@ -105,18 +103,18 @@ AikaPi::map_uncached_mem (MemoryMap *mp,
 void
 AikaPi::map_devices ()
 {
-  map_periph (&m_aux_regs,  (void *) AUX_BASE,  PAGE_SIZE);
-  map_periph (&m_regs_gpio, (void *) GPIO_BASE, PAGE_SIZE);
-  map_periph (&m_regs_dma,  (void *) DMA_BASE,  PAGE_SIZE);
-  map_periph (&m_regs_spi,  (void *) SPI0_BASE, PAGE_SIZE);
-  map_periph (&m_regs_clk,  (void *) CM_BASE,   PAGE_SIZE);
-  map_periph (&m_regs_pwm,  (void *) PWM_BASE,  PAGE_SIZE);
-  map_periph (&m_regs_usec, (void *) USEC_BASE, PAGE_SIZE);
+  map_periph (&m_aux_regs,  (void *) AUX_BASE,   PAGE_SIZE);
+  map_periph (&m_regs_gpio, (void *) GPIO_BASE,  PAGE_SIZE);
+  map_periph (&m_regs_dma,  (void *) DMA_BASE,   PAGE_SIZE);
+  map_periph (&m_regs_spi,  (void *) SPI0_BASE,  PAGE_SIZE);
+  map_periph (&m_regs_cm,   (void *) CM_BASE,    PAGE_SIZE);
+  map_periph (&m_regs_pwm,  (void *) PWM_BASE,   PAGE_SIZE);
+  map_periph (&m_regs_st,   (void *) AP_ST_BASE, PAGE_SIZE);
 }
 
 // --- Memory ---
 void
-AikaPi::map_periph (MemoryMap *mp, void *phys, int size)
+AikaPi::map_periph (AP_MemoryMap *mp, void *phys, int size)
 {
   mp->phys = phys;
   mp->size = PAGE_ROUNDUP(size);
@@ -126,7 +124,7 @@ AikaPi::map_periph (MemoryMap *mp, void *phys, int size)
 
 // Free mapped peripheral or memory
 void 
-AikaPi::unmap_periph_mem (MemoryMap *mp)
+AikaPi::unmap_periph_mem (AP_MemoryMap *mp)
 {
   if (mp)
     {
@@ -194,15 +192,33 @@ AikaPi::dma_enable (int chan)
 
 // Start DMA, given first control block
 void 
-AikaPi::dma_start (MemoryMap *mp, 
-                                int      chan, 
-                                DMA_CB  *cbp, 
-                                uint32_t csval)
+AikaPi::dma_start (AP_MemoryMap *mp, 
+                   int        chan, 
+                   AP_DMA_CB    *cbp, 
+                   uint32_t   csval)
 {
   *REG32(m_regs_dma, DMA_REG(chan, DMA_CONBLK_AD)) = MEM_BUS_ADDR(mp, cbp);
   *REG32(m_regs_dma, DMA_REG(chan, DMA_CS))        = 2;         // Clear 'end' flag
   *REG32(m_regs_dma, DMA_REG(chan, DMA_DEBUG))     = 7;         // Clear error bits
   *REG32(m_regs_dma, DMA_REG(chan, DMA_CS))        = 1 | csval; // Start DMA
+}
+
+void AikaPi:: 
+dma_start (unsigned      channel,
+           AP_MemoryMap *uncached_dma_data,
+           AP_DMA_CB    *dma_cb)
+{
+  *(Utility::get_reg32 (m_regs_dma, Utility::dma_chan_reg_offset (channel,
+    DMA_CONBLK_AD))) = Utility::mem_bus_addr (uncached_dma_data, dma_cb);
+  
+  *(Utility::get_reg32 (m_regs_dma, Utility::dma_chan_reg_offset (channel,
+    DMA_CS))) = 1 << 1; // clear DMA End Flag
+  
+  *(Utility::get_reg32 (m_regs_dma, Utility::dma_chan_reg_offset (channel,
+    DMA_DEBUG))) = 7; // clear erorr flags
+
+  *(Utility::get_reg32 (m_regs_dma, Utility::dma_chan_reg_offset (channel,
+    DMA_CS))) = 1; // start DMA
 }
 
 // void
@@ -524,9 +540,9 @@ AikaPi::terminate (int sig)
   //dma_reset(LAB_OSCILLOSCOPE_DMA_CHAN_SPI_TX);
   
   // unmap_periph_mem (&m_vc_mem);
-  unmap_periph_mem (&m_regs_usec);
+  unmap_periph_mem (&m_regs_st);
   unmap_periph_mem (&m_regs_pwm);
-  unmap_periph_mem (&m_regs_clk);
+  unmap_periph_mem (&m_regs_cm);
   unmap_periph_mem (&m_regs_spi);
   unmap_periph_mem (&m_regs_dma);
   unmap_periph_mem (&m_regs_gpio);
@@ -545,11 +561,11 @@ int AikaPi::
 spi_init (double frequency)
 {
   // initialize spi gpio pins on rpi
-  gpio_set (SPI0_CE0_PIN,  GPIO_ALT0, GPIO_NOPULL);
-  gpio_set (SPI0_CE1_PIN,  GPIO_ALT0, GPIO_NOPULL);
-  gpio_set (SPI0_MISO_PIN, GPIO_ALT0, GPIO_PULLUP);
-  gpio_set (SPI0_MOSI_PIN, GPIO_ALT0, GPIO_NOPULL);
-  gpio_set (SPI0_SCLK_PIN, GPIO_ALT0, GPIO_NOPULL);
+  AP_gpio_set (SPI0_CE0_PIN,  AP_GPIO_FUNC_ALT0, AP_GPIO_PULL_OFF);
+  AP_gpio_set (SPI0_CE1_PIN,  AP_GPIO_FUNC_ALT0, AP_GPIO_PULL_OFF);
+  AP_gpio_set (SPI0_MISO_PIN, AP_GPIO_FUNC_ALT0, AP_GPIO_PULL_UP);
+  AP_gpio_set (SPI0_MOSI_PIN, AP_GPIO_FUNC_ALT0, AP_GPIO_PULL_OFF);
+  AP_gpio_set (SPI0_SCLK_PIN, AP_GPIO_FUNC_ALT0, AP_GPIO_PULL_OFF);
 
   // clear tx and rx fifo. one shot operation
   spi_clear_fifo ();
@@ -651,7 +667,7 @@ bb_spi_open (unsigned CS,
 
   m_pin_info [CS].spi.CS        = CS;
   m_pin_info [CS].spi.SCLK      = SCLK;
-  m_pin_info [CS].spi.CS_mode   = gpio_mode (CS);
+  m_pin_info [CS].spi.CS_mode   = AP_gpio_func (CS);
   m_pin_info [CS].spi.delay     = (500'000 / baud) - 1;
   m_pin_info [CS].spi.spi_flags = spi_flags;
   
@@ -659,9 +675,9 @@ bb_spi_open (unsigned CS,
 
   m_pin_info[SCLK].spi.usage = 1;
 
-  m_pin_info[SCLK].spi.SCLK_mode = gpio_mode (SCLK);
-  m_pin_info[SCLK].spi.MISO_mode = gpio_mode (MISO);
-  m_pin_info[SCLK].spi.MOSI_mode = gpio_mode (MOSI);
+  m_pin_info[SCLK].spi.SCLK_mode = AP_gpio_func (SCLK);
+  m_pin_info[SCLK].spi.MISO_mode = AP_gpio_func (MISO);
+  m_pin_info[SCLK].spi.MOSI_mode = AP_gpio_func (MOSI);
 
   m_pin_info[SCLK].spi.SCLK = SCLK;
   m_pin_info[SCLK].spi.MISO = MISO;
@@ -672,18 +688,18 @@ bb_spi_open (unsigned CS,
   m_pin_info[MOSI].mode = PIN_INFO_MODE_SPI_MOSI;
   
   // set modes of the pins
-  gpio_mode (CS,    GPIO_MODE_OUTPUT);
-  gpio_mode (MOSI,  GPIO_MODE_OUTPUT);
-  gpio_mode (MISO,  GPIO_MODE_INPUT);
-  gpio_mode (SCLK,  GPIO_MODE_OUTPUT);
+  AP_gpio_func (CS,    AP_GPIO_FUNC_OUTPUT);
+  AP_gpio_func (MOSI,  AP_GPIO_FUNC_OUTPUT);
+  AP_gpio_func (MISO,  AP_GPIO_FUNC_INPUT);
+  AP_gpio_func (SCLK,  AP_GPIO_FUNC_OUTPUT);
 
   // set CS mode: idle high or low
   if (Utility::get_bits (spi_flags, BB_SPI_FLAG_CSPOL, 1)) 
-    gpio_write (CS, 0); // active high
+    AP_gpio_write(CS, 0); // active high
   else                                    
-    gpio_write (CS, 1); // active low
+    AP_gpio_write(CS, 1); // active low
 
-  gpio_write (MOSI, 0);
+  AP_gpio_write(MOSI, 0);
 
   return 0;
 }
@@ -747,12 +763,12 @@ bb_spi_xfer_byte (Pin_Info *pi,
       // if write out least significant bit first
       if (Utility::get_bits (pi->spi.spi_flags, BB_SPI_FLAG_TX_LSB, 1))
       {
-        gpio_write (pi->spi.MOSI, (txbyte & 0x01));
+        AP_gpio_write(pi->spi.MOSI, (txbyte & 0x01));
         txbyte >>= 1;
       }
       else 
       {
-        gpio_write (pi->spi.MOSI, (txbyte & 0x80));
+        AP_gpio_write(pi->spi.MOSI, (txbyte & 0x80));
         txbyte <<= 1;
       }
 
@@ -763,11 +779,11 @@ bb_spi_xfer_byte (Pin_Info *pi,
       // if receive least significant bit first
       if (Utility::get_bits (pi->spi.spi_flags, BB_SPI_FLAG_RX_LSB, 1))
       {
-        rxbyte = (rxbyte >> 1) | ((gpio_read (pi->spi.MISO)) << 7);
+        rxbyte = (rxbyte >> 1) | ((AP_gpio_read (pi->spi.MISO)) << 7);
       }
       else 
       {
-        rxbyte = (rxbyte << 1) | (gpio_read (pi->spi.MISO));
+        rxbyte = (rxbyte << 1) | (AP_gpio_read (pi->spi.MISO));
       }
 
       bb_spi_delay (pi);
@@ -784,12 +800,12 @@ bb_spi_xfer_byte (Pin_Info *pi,
       // if write out least significant bit first
       if (Utility::get_bits (pi->spi.spi_flags, BB_SPI_FLAG_TX_LSB, 1))
       {
-        gpio_write (pi->spi.MOSI, txbyte & 0x01);
+        AP_gpio_write(pi->spi.MOSI, txbyte & 0x01);
         txbyte >>= 1;
       }
       else 
       {
-        gpio_write (pi->spi.MOSI, txbyte & 0x80);
+        AP_gpio_write(pi->spi.MOSI, txbyte & 0x80);
         txbyte <<= 1;
       }
 
@@ -800,11 +816,11 @@ bb_spi_xfer_byte (Pin_Info *pi,
       // if receive least significant bit first
       if (Utility::get_bits (pi->spi.spi_flags, BB_SPI_FLAG_RX_LSB, 1))
       {
-        rxbyte = (rxbyte >> 1) | ((gpio_read (pi->spi.MISO)) << 7);
+        rxbyte = (rxbyte >> 1) | ((AP_gpio_read (pi->spi.MISO)) << 7);
       }
       else 
       {
-        rxbyte = (rxbyte << 1) | (gpio_read (pi->spi.MISO));
+        rxbyte = (rxbyte << 1) | (AP_gpio_read (pi->spi.MISO));
       }
 
       bb_spi_delay (pi);
@@ -849,25 +865,25 @@ bb_spi_delay (Pin_Info *pi)
 void AikaPi::
 bb_spi_set_CS (Pin_Info *pi)
 {
-  gpio_write (pi->spi.CS, Utility::get_bits (pi->spi.spi_flags, BB_SPI_FLAG_CSPOL, 1));
+  AP_gpio_write(pi->spi.CS, Utility::get_bits (pi->spi.spi_flags, BB_SPI_FLAG_CSPOL, 1));
 }
 
 void AikaPi::
 bb_spi_clear_CS    (Pin_Info *pi)
 {
-  gpio_write (pi->spi.CS, !(Utility::get_bits (pi->spi.spi_flags, BB_SPI_FLAG_CSPOL, 1)));
+  AP_gpio_write(pi->spi.CS, !(Utility::get_bits (pi->spi.spi_flags, BB_SPI_FLAG_CSPOL, 1)));
 }
 
 void AikaPi:: 
 bb_spi_set_SCLK (Pin_Info *pi)
 {
-  gpio_write (pi->spi.SCLK, !(Utility::get_bits (pi->spi.spi_flags, BB_SPI_FLAG_CPOL, 1)));
+  AP_gpio_write(pi->spi.SCLK, !(Utility::get_bits (pi->spi.spi_flags, BB_SPI_FLAG_CPOL, 1)));
 }
 
 void AikaPi::
 bb_spi_clear_SCLK  (Pin_Info *pi)
 {
-  gpio_write (pi->spi.SCLK, Utility::get_bits (pi->spi.spi_flags, BB_SPI_FLAG_CPOL, 1));
+  AP_gpio_write(pi->spi.SCLK, Utility::get_bits (pi->spi.spi_flags, BB_SPI_FLAG_CPOL, 1));
 }
 
 
@@ -891,10 +907,10 @@ aux_spi1_master_disable ()
 void AikaPi:: 
 aux_spi0_init ()
 {
-  gpio_set (SPI1_SCLK_PIN,  GPIO_ALT4, GPIO_NOPULL);
-  gpio_set (SPI1_MOSI_PIN,  GPIO_ALT4, GPIO_NOPULL);
-  gpio_set (SPI1_MISO_PIN,  GPIO_ALT4, GPIO_PULLUP);
-  gpio_set (SPI1_CE2_PIN,   GPIO_ALT4, GPIO_NOPULL);
+  AP_gpio_set (SPI1_SCLK_PIN,  AP_GPIO_FUNC_ALT4, AP_GPIO_PULL_OFF);
+  AP_gpio_set (SPI1_MOSI_PIN,  AP_GPIO_FUNC_ALT4, AP_GPIO_PULL_OFF);
+  AP_gpio_set (SPI1_MISO_PIN,  AP_GPIO_FUNC_ALT4, AP_GPIO_PULL_UP);
+  AP_gpio_set (SPI1_CE2_PIN,   AP_GPIO_FUNC_ALT4, AP_GPIO_PULL_OFF);
 
   aux_spi1_master_enable ();
   aux_spi0_enable ();
@@ -1120,45 +1136,42 @@ aux_spi_write (uint8_t  channel,
 
 
 // --- GPIO ---
-
-/*
-  Sets the mode and pull-up/down resistor of the specific GPIO pin
-*/
 void AikaPi::
-gpio_set (int pin, 
-          int mode, 
-          int pull)
+AP_gpio_set (unsigned pin, 
+             AP_GPIO_FUNC _AP_GPIO_FUNC, 
+             AP_GPIO_PULL _AP_GPIO_PULL)
 {
-  gpio_mode (pin, mode);
-  gpio_pull (pin, pull);
+  AP_gpio_func (pin, _AP_GPIO_FUNC);
+  AP_gpio_pull (pin, _AP_GPIO_PULL);
 }
 
-/* 
-  Sets the mode of the specific GPIO pin (input, output, or alt functions 0-5)
-*/
 void AikaPi::
-gpio_mode (int pin, 
-           int mode)
+AP_gpio_set (unsigned pin, 
+             AP_GPIO_FUNC _AP_GPIO_FUNC, 
+             AP_GPIO_PULL _AP_GPIO_PULL,
+             bool value)
+{
+  AP_gpio_func   (pin, _AP_GPIO_FUNC);
+  AP_gpio_pull   (pin, _AP_GPIO_PULL);
+  AP_gpio_write  (pin, value);
+}
+
+void AikaPi::
+AP_gpio_func (unsigned     pin, 
+              AP_GPIO_FUNC _AP_GPIO_FUNC)
 {
   volatile uint32_t *reg = Utility::get_reg32 (m_regs_gpio, GPFSEL0) + (pin / 10);
   unsigned shift = (pin % 10) * 3;
 
-  Utility::reg_write (reg, mode, 0x7, shift);
+  Utility::reg_write (reg, _AP_GPIO_FUNC, 0x7, shift);
 }
 
-/*
-  Sets the state of the pull-up/down resistors of the specific GPIO pin
-  00 - off
-  01 - pull down
-  10 - pull up
-  11 - reserved
-*/
 void
-AikaPi::gpio_pull (int pin,
-                   int pull)
+AikaPi::AP_gpio_pull (unsigned     pin,
+                      AP_GPIO_PULL _AP_GPIO_PULL)
 {
   volatile uint32_t *reg = REG32(m_regs_gpio, GPIO_GPPUDCLK0) + pin / 32;
-  *REG32(m_regs_gpio, GPIO_GPPUD) = pull;
+  *REG32(m_regs_gpio, GPIO_GPPUD) = _AP_GPIO_PULL;
   usleep(2);
   
   *reg = pin << (pin % 32);
@@ -1170,8 +1183,8 @@ AikaPi::gpio_pull (int pin,
 }
 
 void AikaPi::
-gpio_write (unsigned pin,   
-            bool     value)
+AP_gpio_write (unsigned pin,   
+               bool     value)
 {
   volatile uint32_t *reg = Utility::get_reg32 (m_regs_gpio, 
     value ? GPSET0 : GPCLR0) + (pin / 32);
@@ -1180,7 +1193,7 @@ gpio_write (unsigned pin,
 }
 
 bool 
-AikaPi::gpio_read (int pin)
+AikaPi::AP_gpio_read (unsigned pin)
 {
   volatile uint32_t *reg = Utility::get_reg32 (m_regs_gpio, GPIO_LEV0) + (pin / 32);
 
@@ -1188,7 +1201,7 @@ AikaPi::gpio_read (int pin)
 }
 
 uint32_t AikaPi:: 
-gpio_mode (unsigned pin)
+AP_gpio_func (unsigned pin)
 {
   volatile uint32_t *reg = (Utility::get_reg32 (m_regs_gpio, GPFSEL0)) + (pin / 10);
 
@@ -1199,24 +1212,28 @@ gpio_mode (unsigned pin)
 
 // --- PWM ---
 // Initialise PWM
-int 
-AikaPi::pwm_init (unsigned channel,
-                  double   source_freq, 
-                  uint32_t range, 
-                  uint32_t val)
+int AikaPi:: 
+pwm_init (unsigned      channel,
+          double        pwm_frequency,
+          AP_CM_CLK_SRC _AP_CM_CLK_SRC,
+          double        pwm_src_clk_freq)
 {
-  if (channel == 1 || channel == 2)
+  if (pwm_frequency <= pwm_src_clk_freq)
   {
-    pwm_reset (channel);
+    m_pwm_freq = pwm_src_clk_freq;
 
-    cm_pwm_frequency (source_freq, CM_PWM_MASH_1STAGE);
+    pwm_reset ();
 
-    *REG32(m_regs_pwm, PWM_RNG1) = range;
-    *REG32(m_regs_pwm, PWM_FIF1) = val;
+    cm_pwm_clk_freq (pwm_src_clk_freq);
 
-    gpio_set(PWM_PIN, GPIO_ALT0, GPIO_PULL_DOWN);
+    AP_gpio_set (PWM_PIN, AP_GPIO_FUNC_ALT0, AP_GPIO_PULL_DOWN);
 
-    return channel;
+    double range = pwm_src_clk_freq / pwm_frequency;
+
+    *REG32(m_regs_pwm, PWM_RNG1) = static_cast<uint32_t>(range);
+    *REG32(m_regs_pwm, PWM_FIF1) = 2;    
+
+    return 1;
   }
   else 
   {
@@ -1230,6 +1247,8 @@ AikaPi::pwm_start ()
 {
   *REG32(m_regs_pwm, PWM_CTL) = PWM_CTL_USEF1 | PWM_ENAB;
   // usleep(1000);
+
+  printf ("pwm start\n");
 }
 
 // Stop PWM operation
@@ -1250,8 +1269,11 @@ AikaPi::pwm_frequency (double value, double duty_cycle)
   if (duty_cycle >= 0 && duty_cycle <= 100)
   {
     pwm_stop();
+    
+    //assume the current PWM clock source is 500MHz (PLLD)
+    //then divisor is 5. therefore PWM clock = 100MHz
 
-    double temp_range = (m_pwm_freq * 2.0) / (value);
+    double temp_range = ((500'000'000 / 500) / value);
     //double temp_data  = temp_range * (duty_cycle / 100.0);
     int temp_data = 2;
 
@@ -1261,6 +1283,8 @@ AikaPi::pwm_frequency (double value, double duty_cycle)
 
     *(Utility::get_reg32 (m_regs_pwm, PWM_RNG1)) = static_cast<uint32_t>(temp_range);
     *(Utility::get_reg32 (m_regs_pwm, PWM_FIF1)) = static_cast<uint32_t>(temp_data);
+
+
 
     pwm_start ();
 
@@ -1386,69 +1410,158 @@ AikaPi::pwm_range (unsigned channel,
 
 // Set the Control, Range, and Data registers of the PWM channel to 0
 int
-AikaPi::pwm_reset (unsigned channel)
+AikaPi::pwm_reset ()
 {
-  if (channel == 1 || channel == 2)
-  {
-    *(Utility::get_reg32 (m_regs_pwm, PWM_CTL)) = 0;
+  *Utility::get_reg32 (m_regs_pwm, PWM_CTL) = 0x00000000;
+  *Utility::get_reg32 (m_regs_pwm, PWM_STA) = 0x000001FE;
+  *Utility::get_reg32 (m_regs_pwm, PWM_RNG1) - 0x00000020;
 
-    pwm_range (channel, 0);
-  }
-  else 
-  {
-    return -1;
-  }
-
-  return channel;
+  return 1;
 }
 
 // --- Clock Manager Audio Clocks ---
-
-// Set the PWM clock frequency
-double AikaPi::
-cm_pwm_frequency (double value)
+void AikaPi:: 
+cm_pcm_clk_stop ()
 {
-  // default to using CM_PWM_MASH_1STAGE
-  cm_pwm_frequency (value, CM_PWM_MASH_1STAGE);
+  volatile uint32_t *p = Utility::get_reg32 (m_regs_cm, CM_PCMCTL);
 
-  return CM_PWM_MASH_1STAGE;
+  *p = *p | (1 << 5);
+
+  while (((*p) >> 7) & 0x01);
+}
+
+bool AikaPi:: 
+cm_pwm_clk_is_running ()
+{
+  uint32_t reg = *(Utility::get_reg32 (m_regs_cm, CM_PWMCTL));
+
+  return (((reg >> 7) & 0x1) ? true : false);
+}
+
+double AikaPi:: 
+cm_pwm_clk_divisor ()
+{
+  uint32_t reg = *(Utility::get_reg32 (m_regs_cm, CM_PWMDIV));
+
+  double integral   = (reg >> 12) & 0xfff;
+  double fractional = (reg & 0xfff) * std::pow (10, -12);
+
+  return (integral + fractional);
+}
+
+// Stop AND RESET the clock generator
+void AikaPi:: 
+cm_pwm_clk_stop ()
+{
+   volatile uint32_t *reg = Utility::get_reg32 (m_regs_cm, CM_PWMCTL);
+
+  *reg = (CM_PASSWD) | (1 << 5);
+
+  std::this_thread::sleep_for (std::chrono::microseconds (10));
+
+  //while (cm_pwm_clk_is_running ());
+}
+
+void AikaPi:: 
+cm_pwm_clk_run ()
+{
+  volatile uint32_t *reg = Utility::get_reg32 (m_regs_cm, CM_PWMCTL);
+
+  *reg |= (CM_PASSWD) | (1 << 4);
+
+   while (!Utility::get_bits (*reg, 7, 1))
+  {
+    std::cout << "waiting for clock to run!\n";
+    Utility::disp_reg32 (m_regs_cm, CM_PWMCTL);
+    std::cout << "\n\n";
+  }
+}
+
+void AikaPi:: 
+cm_pcm_clk_run ()
+{
+  volatile uint32_t *p = Utility::get_reg32 (m_regs_cm, CM_PCMCTL);
+
+  *p = *p | CM_PASSWD | (1 << 4);
+
+  while (((*p)>> 7) & 0x00);
+}
+
+// Do not call this function while CM'S BUSY = 1, and do not 
+// change this control at the same time as asserting ENAB
+int AikaPi:: 
+cm_pwm_clk_src (AP_CM_CLK_SRC _AP_CM_CLK_SRC)
+{
+  if (cm_pwm_clk_is_running ())
+  {
+    return 0;
+  }
+  else 
+  {    
+    volatile uint32_t *reg = Utility::get_reg32 (m_regs_cm, CM_PWMCTL);
+
+    *reg |= (CM_PASSWD) | (_AP_CM_CLK_SRC << 0);
+
+    std::this_thread::sleep_for (std::chrono::microseconds (10));
+
+    return 1;
+  }  
+}
+
+int AikaPi:: 
+cm_pwm_clk_mash (AP_CM_CLK_MASH _AP_CM_CLK_MASH)
+{
+  if (cm_pwm_clk_is_running ())
+  {
+    return 0;
+  }
+  else 
+  {
+    volatile uint32_t *reg = Utility::get_reg32 (m_regs_cm, CM_PWMCTL);
+
+    *reg |= (CM_PASSWD) | (_AP_CM_CLK_MASH << 9);
+
+    std::this_thread::sleep_for (std::chrono::microseconds (100));
+
+    return 1;
+  }
 }
 
 double AikaPi::
-cm_pwm_frequency (double value, uint32_t mash)
+cm_pwm_clk_freq (double value)
 {
-  volatile uint32_t *reg = Utility::get_reg32 (m_regs_clk, CM_PWMCTL);
-  volatile uint32_t *div = Utility::get_reg32 (m_regs_clk, CM_PWMDIV);
+  if (cm_pwm_clk_is_running ())
+  {
+    return -1;
+  }
+  else 
+  {
+    volatile uint32_t *reg = Utility::get_reg32 (m_regs_cm, CM_PWMDIV);
 
-  m_pwm_freq = value;
+    m_cm_pwm_clk_freq = value;
 
-  double divisor = static_cast<double>(CLOCK_HZ) / value;
+    // for now, this is 500MHz for PLLD.
+    // change this soon.
+    double divisor = static_cast<double>(500000000.0) / value;
 
-  // 1.) Kill the clock generator
-  *reg = CM_PASSWD | (1 << 5);
+    double integral;
+    double fractional = std::modf (divisor, &integral);
+    
+    fractional = fractional * std::pow (10, 12);
 
-  // 2.) Wait for clock generator to actually be stopped by checking BUSY flag
-  while (Utility::get_bits (*reg, 7, 1));
+    // DEBUG
+    printf ("integral  : %9.12f\n", integral);
+    printf ("fractional: %9.12f\n", fractional);
+    //
 
-  // 3.) Load the divisor (integral and fractional part)
-  double integral;
-  double fractional_f = std::modf (divisor, &integral);
-  int    fractional_i = fractional_f * std::pow (10, 6);
-
-  *div = CM_PASSWD | ((static_cast<int>(integral) & 0xFFF) << 12) | 
-    (fractional_i & 0xFFF);
-
-  // 3.) Configure the MASH control, clock source to be PLLD per (6), 
-  //     and enable the clock generator
-  *reg = CM_PASSWD | (mash << 9) | 6 | (1 << 4);
-  
-  // 5.) Wait for clock generator to actually be running by checking ENAB flag
-  while (!Utility::get_bits (*reg, 7, 1));
-
-  return (m_pwm_freq);
+    *reg = CM_PASSWD | (static_cast<uint32_t>(integral) & 0xfff) << 12 |
+      static_cast<uint32_t>(fractional) & 0xfff;
+    
+    std::this_thread::sleep_for (std::chrono::microseconds (100));
+    
+    return value;
+  }
 }
-
-
 
 // --- FIFO ---
 int      

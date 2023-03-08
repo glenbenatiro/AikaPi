@@ -14,7 +14,7 @@ int main ()
 {
   AikaPi _AikaPi;
 
-  _AikaPi.gpio_set (PWM0_PIN, GPIO_MODE_OUTPUT, GPIO_PULL_DOWN);
+  _AikaPi.AP_gpio_set (PWM0_PIN, AP_GPIO_FUNC_OUTPUT, GPIO_PULL_DOWN);
 
   uint32_t m_pwm_range       = (LAB_PWM_FREQUENCY * 2) / LAB_OSCILLOSCOPE_MAX_SAMPLING_RATE;
 

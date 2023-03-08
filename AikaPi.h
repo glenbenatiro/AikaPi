@@ -3,11 +3,13 @@
 
 #include <cstdint>
 #include <mutex>
+#include <bitset>
+#include <iostream>
 
 // Link to the BCM2385 datasheet:
 // // https://www.raspberrypi.org/app/uploads/2012/02/BCM2835-ARM-Peripherals.pdf
 
-#define RPI_VERSION  0
+#define RPI_VERSION 3
 
 #if RPI_VERSION == 0
   #define PHYS_REG_BASE PI_01_REG_BASE
@@ -96,16 +98,52 @@ typedef struct {
            next_cb, // Next control block
            debug,   // Debug register, zero in control block
            unused;
-} DMA_CB __attribute__ ((aligned(32)));
+} AP_DMA_CB __attribute__ ((aligned(32)));
 
 
-// Clock Manager Audio Clock
+// --- Clock Manager (PCM & PWM Clocks)---
 // https://www.scribd.com/doc/127599939/BCM2835-Audio-clocks
+
 constexpr uint32_t CM_BASE    = (PHYS_REG_BASE + 0x101000);
+constexpr uint32_t CM_PCMCTL  = 0x98;
 constexpr uint32_t CM_PWMCTL  = 0xa0;
+constexpr uint32_t CM_PCMDIV  = 0x9c;
 constexpr uint32_t CM_PWMDIV  = 0xa4;
-constexpr uint32_t CM_PASSWD  = 0x5a000000;
-constexpr int PWM_CLOCK_ID    = 0xa;
+constexpr uint32_t CM_PASSWD  = (0x5a << 24);
+
+/*
+  Clock Sources and their Frequencies
+  https://raspberrypi.stackexchange.com/questions/1153/what-are-the-different-clock-sources-for-the-general-purpose-clocks
+
+  0     0 Hz     Ground
+  1     19.2 MHz oscillator
+  2     0 Hz     testdebug0
+  3     0 Hz     testdebug1
+  4     0 Hz     PLLA
+  5     1000 MHz PLLC (changes with overclock settings)
+  6     500 MHz  PLLD
+  7     216 MHz  HDMI auxiliary
+  8-15  0 Hz     Ground
+*/
+enum AP_CM_CLK_SRC
+{
+  AP_CM_CLK_SRC_GND             = 0,
+  AP_CM_CLK_SRC_OSCILLATOR      = 1,
+  AP_CM_CLK_SRC_TESTDEBUG0      = 2,
+  AP_CM_CLK_SRC_TESTDEBUG1      = 3,
+  AP_CM_CLK_SRC_PLLA            = 4,
+  AP_CM_CLK_SRC_PLLC            = 5,
+  AP_CM_CLK_SRC_PLLD            = 6,
+  AP_CM_CLK_SRC_HDMI_AUXILIARY  = 7
+};
+
+enum AP_CM_CLK_MASH
+{
+  AP_CM_CLK_MASH_INTEGER = 0,
+  AP_CM_CLK_MASH_1STAGE  = 1,
+  AP_CM_CLK_MASH_2STAGE  = 2,
+  AP_CM_CLK_MASH_3STAGE  = 3
+};
 
 // --- General Raspberry Pi ---
 constexpr int PI_MAX_USER_GPIO  = 31;
@@ -170,7 +208,6 @@ constexpr int GPIO_LEV0       = 0x34;
 constexpr int GPIO_GPPUD      = 0x94;
 constexpr int GPIO_GPPUDCLK0  = 0x98;
 
-
 constexpr int GPIO_GPFSEL0    = 0x00;
 constexpr int GPIO_GPSET0     = 0x1C;
 constexpr int GPIO_GPCLR0     = 0x28;
@@ -179,25 +216,30 @@ constexpr int GPIO_GPEDS0     = 0x40;
 constexpr int GPIO_GPREN0     = 0x4C;
 constexpr int GPIO_GPFEN0     = 0x58;
 
-constexpr int GPIO_IN     = 0;
-constexpr int gpio_write   = 1;
-constexpr int GPIO_ALT0   = 4;
-constexpr int GPIO_ALT1   = 5;
-constexpr int GPIO_ALT2   = 6;
-constexpr int GPIO_ALT3   = 7;
-constexpr int GPIO_ALT4   = 3;
-constexpr int GPIO_ALT5   = 2;
-constexpr int GPIO_NOPULL = 0;
-constexpr int GPIO_PULLDN = 1;
-constexpr int GPIO_PULLUP = 2;
+enum AP_GPIO_FUNC
+{
+  AP_GPIO_FUNC_INPUT  = 0,
+  AP_GPIO_FUNC_OUTPUT = 1,
+  AP_GPIO_FUNC_ALT0   = 4,
+  AP_GPIO_FUNC_ALT1   = 5,
+  AP_GPIO_FUNC_ALT2   = 6,
+  AP_GPIO_FUNC_ALT3   = 7,
+  AP_GPIO_FUNC_ALT4   = 3,
+  AP_GPIO_FUNC_ALT5   = 2
+};
 
-
+enum AP_GPIO_PULL
+{
+  AP_GPIO_PULL_OFF      = 0,
+  AP_GPIO_PULL_DOWN     = 1,
+  AP_GPIO_PULL_UP       = 2,
+  AP_GPIO_PULL_RESERVED = 3
+};
 
 // --- Microsecond Timer ---
 // Page 172
-constexpr uint32_t USEC_BASE  = PHYS_REG_BASE + 0x3000;  // Physical address! 
-constexpr uint32_t USEC_TIME  = 0x04;
-constexpr uint32_t USEC_CLO   = 0x04; // System Timer Counter Lower 32 bits 
+constexpr uint32_t AP_ST_BASE = PHYS_REG_BASE + 0x3000;  // Physical address! 
+constexpr uint32_t AP_ST_CLO  = 0x04;
 
 // --- VideoCore Mailbox ---
 // Mailbox command/response structure
@@ -303,31 +345,6 @@ enum PIN_INFO_MODE
   PIN_INFO_MODE_SPI_CS
 };
 
-/*
-  This is used by the gpio_mode function to set GPIO pin function (input, output, or alt functions 0-5)
-*/
-enum GPIO_MODES
-{
-  GPIO_MODE_INPUT   = 0,
-  GPIO_MODE_OUTPUT  = 1,
-  GPIO_MODE_ALT0    = 4,
-  GPIO_MODE_ALT1    = 5, 
-  GPIO_MODE_ALT2    = 6,
-  GPIO_MODE_ALT3    = 7,
-  GPIO_MODE_ALT4    = 3,
-  GPIO_MODE_ALT5    = 2
-};
-
-/*
-  This is used by the gpio_pull function to set GPIO pin pull-up/down resistor state
-*/
-enum GPIO_PULL
-{
-  GPIO_PULL_DISABLE = 0,
-  GPIO_PULL_DOWN    = 1,
-  GPIO_PULL_UP      = 2,
-};
-
 enum BB_SPI_FLAG
 {
   BB_SPI_FLAG_CPHA    = 0,
@@ -343,13 +360,6 @@ enum PWM_CHANNEL_MODE
   PWM_CHANNEL_MODE_SERIALISER = 1
 };
 
-enum CM_PWM_MASH
-{
-  CM_PWM_MASH_INTEGER = 0,
-  CM_PWM_MASH_1STAGE  = 1,
-  CM_PWM_MASH_2STAGE  = 2,
-  CM_PWM_MASH_3STAGE  = 3
-};
 
 // --- Structs ---
 typedef struct 
@@ -365,7 +375,7 @@ typedef struct
   // Software directly accessing peripherals using the DMA engines must use bus addresses
   // Software accessing RAM directly must use physical addresses
   // Software accessing RAM using DMA engines must use bus addresses
-} MemoryMap;
+} AP_MemoryMap;
 
 typedef struct
 {
@@ -415,7 +425,7 @@ class Utility
 {
   public:
     static uint32_t   get_bits   (uint32_t input, unsigned shift, uint32_t mask);
-    static void       reg_write  (MemoryMap mem_map, uint32_t offset, uint32_t value, uint32_t mask, unsigned shift);
+    static void       reg_write  (AP_MemoryMap mem_map, uint32_t offset, uint32_t value, uint32_t mask, unsigned shift);
 
 
     static void reg_write (volatile uint32_t *reg, 
@@ -432,19 +442,19 @@ class Utility
   // inline functions
 
   // Return a uint32_t to the virtual address of specific register of a peripheral
-  static volatile uint32_t* get_reg32 (MemoryMap mem_map, uint32_t  offset)
+  static volatile uint32_t* get_reg32 (AP_MemoryMap mem_map, uint32_t  offset)
   {
     return (volatile uint32_t *)((uint32_t)(mem_map.virt) + (uint32_t)(offset));
   }
 
   // Return a uint32_t bus address of a specific register of a peripheral 
-  static uint32_t reg_bus_addr (MemoryMap *_MemoryMap, uint32_t offset)
+  static uint32_t reg_bus_addr (AP_MemoryMap *_MemoryMap, uint32_t offset)
   {
     return ((uint32_t)(_MemoryMap->bus) + offset); 
   }
 
   // Return a bus address, given virtual address
-  static uint32_t mem_bus_addr (MemoryMap *_MemoryMap, volatile void* offset)
+  static uint32_t mem_bus_addr (AP_MemoryMap *_MemoryMap, volatile void* offset)
   {
     return ((uint32_t)(offset) - (uint32_t)(_MemoryMap->virt) + 
     (uint32_t)(_MemoryMap->bus));
@@ -455,6 +465,16 @@ class Utility
   {
     return ((dma_channel * 0x100) + dma_register);
   }
+
+  static void disp_reg32 (AP_MemoryMap mem_map, uint32_t offset)
+  {
+    volatile uint32_t *reg = Utility::get_reg32 (mem_map, offset);
+
+    std::cout << std::bitset <8> (*reg >> 24) << " "
+              << std::bitset <8> (*reg >> 16) << " "
+              << std::bitset <8> (*reg >>  8) << " " 
+              << std::bitset <8> (*reg      ) << "\n"; 
+  }
 };
 
 // --- AikaPi ---
@@ -464,25 +484,22 @@ class AikaPi
   private: 
     int m_pwm_value       = 10;
 
-    double m_pwm_freq = 0.0;
+    double m_pwm_freq         = 0.0;
+    double m_cm_pwm_clk_freq  = 0.0;
 
     Pin_Info m_pin_info [PI_MAX_USER_GPIO + 1];
 
     bool m_is_pwm_init = false;
 
   public:
-    //int m_spi_frequency = LAB_SPI_FREQUENCY;
+    AP_MemoryMap  m_regs_gpio,
+                  m_regs_dma, 
+                  m_regs_cm, 
+                  m_regs_pwm, 
+                  m_regs_spi, 
+                  m_regs_st,
+                  m_aux_regs;
 
-    MemoryMap m_regs_gpio,
-              m_regs_dma, 
-              m_regs_clk, 
-              m_regs_pwm, 
-              m_regs_spi, 
-              m_regs_usec,
-              m_aux_regs;
-
-    // MemoryMap m_vc_mem;
-       
   public:
     int   m_fifo_fd = 0;
 
@@ -497,22 +514,22 @@ class AikaPi
     void    delay (uint32_t microseconds);
 
     // --- Memory ---
-    void     map_periph       (MemoryMap *mp, void *phys, int size);    
+    void     map_periph       (AP_MemoryMap *mp, void *phys, int size);    
     void     map_devices      ();
     void*    map_segment      (void *addr, int size);
     void     unmap_segment    ();
-    void*    map_uncached_mem (MemoryMap *mp, int size);
-    void     unmap_periph_mem (MemoryMap *mp);
+    void*    map_uncached_mem (AP_MemoryMap *mp, int size);
+    void     unmap_periph_mem (AP_MemoryMap *mp);
     
     // --- Videocore Mailbox ---
-    int  	   mailbox_open        (void);
+    int  	   mailbox_open     (void);
     void     disp_vc_msg      (AP_VC_MSG *msgp);
-    void 	   mailbox_close       (int fd);
+    void 	   mailbox_close    (int fd);
     void     unmap_segment    (void *mem, int  size);
     void*    vc_mem_lock      (int fd, int h);
     uint32_t mbox_msg         (int fd, AP_VC_MSG *msgp);
     uint32_t fset_vc_clock    (int fd, int id, uint32_t freq);
-    uint32_t vc_mem_release      (int fd, int h);
+    uint32_t vc_mem_release   (int fd, int h);
     uint32_t vc_mem_unlock    (int fd, int h);
     uint32_t vc_mem_alloc     (int fd, uint32_t size, MAILBOX_ALLOCATE_MEMORY_FLAGS flags);
   
@@ -524,10 +541,12 @@ class AikaPi
     void     dma_enable       (int chan);
     //void     dma_start        (uint32_t dma_channel, uint32_t dma_cb_address);
 
-    void dma_start (MemoryMap *mp, 
+    void dma_start (AP_MemoryMap *mp, 
                                 int      chan, 
-                                DMA_CB  *cbp, 
+                                AP_DMA_CB  *cbp, 
                                 uint32_t csval);
+    
+    void dma_start (unsigned channel, AP_MemoryMap *uncached_dma_data, AP_DMA_CB *dma_cb);
 
     void     dma_disp         (int chan);
     void     dma_reset         (int chan);
@@ -539,12 +558,13 @@ class AikaPi
     uint32_t  dma_transfer_len (int chan);
     
     // --- GPIO ---
-    void      gpio_set    (int pin, int mode, int pull);
-    void      gpio_mode   (int pin, int mode);
-    void      gpio_pull   (int pin, int pull);
-    bool      gpio_read   (int pin);
-    void      gpio_write  (unsigned pin, bool value); 
-    uint32_t  gpio_mode   (unsigned pin);
+    void      AP_gpio_set    (unsigned pin, AP_GPIO_FUNC _AP_GPIO_FUNC, AP_GPIO_PULL _AP_GPIO_PULL);
+    void      AP_gpio_set    (unsigned pin, AP_GPIO_FUNC _AP_GPIO_FUNC, AP_GPIO_PULL _AP_GPIO_PULL, bool value);
+    void      AP_gpio_func   (unsigned pin, AP_GPIO_FUNC _AP_GPIO_FUNC);
+    void      AP_gpio_pull   (unsigned pin, AP_GPIO_PULL _AP_GPIO_PULL);
+    bool      AP_gpio_read   (unsigned pin);
+    void      AP_gpio_write  (unsigned pin, bool value); 
+    uint32_t  AP_gpio_func   (unsigned pin);
     
     // --- SPI ---
     int       spi_init            (double frequency);
@@ -595,7 +615,7 @@ class AikaPi
     void aux_spi_write  (uint8_t channel, char *txbuff,               uint8_t count);
 
     // --- PWM ---
-    int     pwm_init              (unsigned channel, double source_freq, uint32_t range, uint32_t val);
+    int     pwm_init (unsigned channel, double pwm_frequency, AP_CM_CLK_SRC _AP_CM_CLK_SRC = AP_CM_CLK_SRC_PLLD, double pwm_src_clk_freq = 1'000'000);
     void    pwm_start             ();
     void    pwm_stop              ();
     double  pwm_frequency         (double value, double duty_cycle);
@@ -606,11 +626,19 @@ class AikaPi
     bool    pwm_channel_state     (unsigned channel);
     int     pwm_fifo              (uint32_t value);
     int     pwm_range             (unsigned channel, uint32_t value);
-    int     pwm_reset             (unsigned channel);
+    int     pwm_reset             ();
 
     // --- Clock Manager Audio Clocks ---
-    double  cm_pwm_frequency     (double value);
-    double  cm_pwm_frequency     (double value, uint32_t mash);
+    void    cm_pcm_clk_stop ();
+    void    cm_pcm_clk_run  ();
+
+    bool    cm_pwm_clk_is_running ();
+    double  cm_pwm_clk_divisor    ();
+    void    cm_pwm_clk_stop       ();
+    void    cm_pwm_clk_run        ();
+    int     cm_pwm_clk_src        (AP_CM_CLK_SRC _AP_CM_CLK_SRC);
+    int     cm_pwm_clk_mash       (AP_CM_CLK_MASH _AP_CM_CLK_MASH);
+    double  cm_pwm_clk_freq       (double value);
 
     // --- FIFO ---
     int      fifo_create      (const char *fifo_name);
