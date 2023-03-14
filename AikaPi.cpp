@@ -535,9 +535,9 @@ AikaPi::terminate (int sig)
   printf("Closing\n");
   
   spi_disable();
-  //dma_reset(LAB_OSCILLOSCOPE_DMA_CHAN_PWM_PACING);
-  //dma_reset(LAB_OSCILLOSCOPE_DMA_CHAN_SPI_RX);
-  //dma_reset(LAB_OSCILLOSCOPE_DMA_CHAN_SPI_TX);
+  //dma_reset(LAB_DMA_CHAN_PWM_PACING);
+  //dma_reset(LAB_DMA_CHAN_OSCILLOSCOPE_SPI_RX);
+  //dma_reset(LAB_DMA_CHAN_OSCILLOSCOPE_SPI_TX);
   
   // unmap_periph_mem (&m_vc_mem);
   unmap_periph_mem (&m_regs_st);
@@ -1238,13 +1238,13 @@ pwm_start (unsigned channel)
 {
   if (channel == 0)
   {
-    *(Utility::get_reg32 (m_regs_pwm, PWM_CTL)) |=  (1 << 2) | (1 << 0);
+    *(Utility::get_reg32 (m_regs_pwm, PWM_CTL)) |= 1 << 0;
 
     return 1;
   }
   else if (channel == 1)
   {
-    *(Utility::get_reg32 (m_regs_pwm, PWM_CTL)) |= (1 << 13) | (1 << 8);
+    *(Utility::get_reg32 (m_regs_pwm, PWM_CTL)) |= 1 << 8;
 
     return 1;
   }
@@ -1341,12 +1341,12 @@ int
 AikaPi::pwm_use_fifo  (unsigned channel, 
                        bool     value)
 {
-  if (channel == 1 || channel == 2)
+  if (channel == 0 || channel == 1)
   {
     Utility::reg_write (Utility::get_reg32 (m_regs_pwm, PWM_CTL), value, 1,
-      (channel == 2) ? 13 : 5);
+      (channel == 0) ? 5 : 13);
 
-    return value;
+    return 1;
   }
   else 
   {
@@ -1423,17 +1423,14 @@ double AikaPi::
 pwm_frequency (unsigned channel,
                double   frequency)
 {
-  if (frequency >= 0 || channel == 0 || channel == 1)
+  if (channel == 0 || channel == 1)
   {
     m_pwm_range = m_pwm_clk_src_freq / frequency;
 
     *(Utility::get_reg32 (m_regs_pwm, (channel == 0 ? PWM_RNG1 : PWM_RNG2))) = 
       static_cast<uint32_t>(m_pwm_range);
 
-    std::cout << "m_pwm_clk_src_freq: " << m_pwm_clk_src_freq << "\n";
-    std::cout << "range: " << m_pwm_range << "\n";
-
-    return frequency;
+    return (m_pwm_range);
   }
   else 
   {
@@ -1451,10 +1448,8 @@ pwm_duty_cycle (unsigned  channel,
     double fifo_data = m_pwm_range * dc_percentage;
 
     *(Utility::get_reg32 (m_regs_pwm, PWM_DAT1)) = fifo_data;
-
-    std::cout << "duty cycle per: " << dc_percentage << "\n";
-    std::cout << "fifo data: " << fifo_data << "\n";
-
+    *(Utility::get_reg32 (m_regs_pwm, PWM_FIF1)) = fifo_data;
+    
     return dc_percentage;
   }
   else 
@@ -1574,7 +1569,9 @@ cm_pwm_clk_init (double         pwm_clk_src_freq,
 
   // 3.) Calculate the divisor, given the PWM source clock frequency 
   //     from the given PWM clock source (AP_CM_CLK_SRC)
-  double divisor = (AP_CM_CLK_SRC_FREQ.at (_AP_CM_CLK_SRC)) / pwm_clk_src_freq;
+  
+  // double divisor = (AP_CM_CLK_SRC_FREQ.at (_AP_CM_CLK_SRC)) / pwm_clk_src_freq;
+  double divisor = (500'000'000.0) / pwm_clk_src_freq;
 
   double integral;
   double fractional = std::modf (divisor, &integral);

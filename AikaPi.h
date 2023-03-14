@@ -10,7 +10,7 @@
 // Link to the BCM2385 datasheet:
 // // https://www.raspberrypi.org/app/uploads/2012/02/BCM2835-ARM-Peripherals.pdf
 
-#define RPI_VERSION 3
+#define RPI_VERSION 0
 
 #if RPI_VERSION == 0
   #define PHYS_REG_BASE PI_01_REG_BASE
@@ -41,6 +41,18 @@
 constexpr uint32_t BUS_REG_BASE = 0x7E000000;
 
 // --- DMA ---
+struct AP_DMA_CB
+{
+  uint32_t  ti,       // Transfer information
+            srce_ad,  // Source address
+            dest_ad,  // Destination address
+            tfr_len,  // Transfer length, in bytes
+            stride,   // Transfer stride
+            next_cb,  // Next control block
+            debug,    // Debug register, zero in control block
+            unused;
+} __attribute__ (( aligned(32) ));
+
 constexpr uint32_t DMA_BASE           = (PHYS_REG_BASE + 0x007000);
 constexpr uint32_t DMA_TI_DREQ_PWM    = 5;
 constexpr uint32_t DMA_TI_DREQ_SPI_RX = 7;
@@ -65,7 +77,6 @@ constexpr uint32_t DMA_CB_TI_SPI_RX = (DMA_TI_DREQ_SPI_RX << 16) | DMA_TI_SRC_DR
 #define DMA_SPI_TX_DREQ 6
 #define DMA_SPI_RX_DREQ 7
 
-
 // DMA register addresses offset by 0x100 * chan_num
 constexpr uint32_t DMA_CONBLK_AD = 0x04;
 constexpr uint32_t DMA_CS        = 0x00;
@@ -87,19 +98,8 @@ constexpr uint32_t DMA_DEBUG     = 0x20;
 #define DMA_SRCE_DREQ   (1 << 10)
 #define DMA_PRIORITY(n) ((n) << 16)
 
-// DMA control block (must be 32-byte aligned)
-// https://www.raspberrypi.org/app/uploads/2012/02/BCM2835-ARM-Peripherals.pdf
-// 4.2.1.1 Control Block Data Structure, page 40
-typedef struct {
-  uint32_t ti,      // Transfer info
-           srce_ad, // Source address
-           dest_ad, // Destination address
-           tfr_len, // Transfer length in bytes
-           stride,  // Transfer stride
-           next_cb, // Next control block
-           debug,   // Debug register, zero in control block
-           unused;
-} AP_DMA_CB __attribute__ ((aligned(32)));
+
+
 
 
 // --- Clock Manager (PCM & PWM Clocks)---
@@ -138,17 +138,17 @@ enum AP_CM_CLK_SRC
   AP_CM_CLK_SRC_HDMI_AUXILIARY  = 7
 };
 
-const std::map <AP_CM_CLK_SRC, double> AP_CM_CLK_SRC_FREQ =
-{
-  {AP_CM_CLK_SRC_GND,             0.0},
-  {AP_CM_CLK_SRC_OSCILLATOR,      19'200'000.0},
-  {AP_CM_CLK_SRC_TESTDEBUG0,      0.0},
-  {AP_CM_CLK_SRC_TESTDEBUG1,      0.0},
-  {AP_CM_CLK_SRC_PLLA,            0.0},
-  {AP_CM_CLK_SRC_PLLC,            1'000'000'000.0},
-  {AP_CM_CLK_SRC_PLLD,            500'000'000.0},
-  {AP_CM_CLK_SRC_HDMI_AUXILIARY,  216'000'000.0},
-};
+// const std::map <AP_CM_CLK_SRC, double> AP_CM_CLK_SRC_FREQ =
+// {
+//   {AP_CM_CLK_SRC_GND,             0.0},
+//   {AP_CM_CLK_SRC_OSCILLATOR,      19'200'000.0},
+//   {AP_CM_CLK_SRC_TESTDEBUG0,      0.0},
+//   {AP_CM_CLK_SRC_TESTDEBUG1,      0.0},
+//   {AP_CM_CLK_SRC_PLLA,            0.0},
+//   {AP_CM_CLK_SRC_PLLC,            1'000'000'000.0},
+//   {AP_CM_CLK_SRC_PLLD,            500'000'000.0},
+//   {AP_CM_CLK_SRC_HDMI_AUXILIARY,  216'000'000.0},
+// };
 
 enum AP_CM_CLK_MASH
 {
@@ -465,6 +465,15 @@ class Utility
 
 
   // inline functions
+  static void print_u32 (uint32_t data)
+  {
+    std::cout << std::bitset <8> (data >> 24) << " " 
+              << std::bitset <8> (data >> 16) << " "
+              << std::bitset <8> (data >>  8) << " "
+              << std::bitset <8> (data      );
+    
+    std::cout << "\n";
+  }
 
   // Return a uint32_t to the virtual address of specific register of a peripheral
   static volatile uint32_t* get_reg32 (AP_MemoryMap mem_map, uint32_t  offset)
