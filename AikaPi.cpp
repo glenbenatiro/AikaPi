@@ -623,7 +623,7 @@ spi_disp ()
                                "CLK", 
                                "DLEN", 
                                "LTOH", 
-                               "DC", 
+                               "LE_WAVE_TYPE_DC", 
                                ""};
 
   int i = 0;
@@ -1449,7 +1449,7 @@ pwm_duty_cycle (unsigned  channel,
 
     *(Utility::get_reg32 (m_regs_pwm, PWM_DAT1)) = fifo_data;
     *(Utility::get_reg32 (m_regs_pwm, PWM_FIF1)) = fifo_data;
-    
+
     return dc_percentage;
   }
   else 
