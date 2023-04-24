@@ -18,30 +18,30 @@
 // And it may cause SPI problems if the clock isn't fixed 
 // (i.e. at 250 MHz with core_freq=250 in /boot/config.txt).
 
-#if RPI_VERSION == 0
-  #define PHYS_REG_BASE PI_01_REG_BASE
-  #define CLOCK_HZ	    250000000
-  //#define SPI_CLOCK_HZ  400000000 // !! https://github.com/raspberrypi/linux/issues/2094 !!
-  #define SPI_CLOCK_HZ  250000000 // !! https://github.com/raspberrypi/linux/issues/2094 !!
-#elif RPI_VERSION == 1
-  #define PHYS_REG_BASE PI_01_REG_BASE
-  #define CLOCK_HZ	    250000000
-  #define SPI_CLOCK_HZ  250000000
-#elif RPI_VERSION == 2 || RPI_VERSION == 3
-  #define PHYS_REG_BASE PI_23_REG_BASE
-  #define CLOCK_HZ	    250000000
-  #define SPI_CLOCK_HZ  250000000
-#elif RPI_VERSION == 4
-  #define PHYS_REG_BASE PI_4_REG_BASE
-  #define CLOCK_HZ	    375000000
-  #define SPI_CLOCK_HZ  200000000
-#endif
-
 // Location of peripheral registers in physical memory
 // This can be seen on page 5 of ARM BCM2385 document
-#define PI_01_REG_BASE 0x20000000 // Pi Zero or 1 
-#define PI_23_REG_BASE 0x3F000000 // Pi 2 or 3
-#define PI_4_REG_BASE  0xFE000000 // Pi 4
+constexpr uint32_t PI_01_REG_BASE = 0x20000000; // Pi Zero or 1 
+constexpr uint32_t PI_23_REG_BASE = 0x3F000000; // Pi 2 or 3
+constexpr uint32_t PI_4_REG_BASE  = 0xFE000000; // Pi 4
+
+#if RPI_VERSION == 0
+  constexpr uint32_t PHYS_REG_BASE  = PI_01_REG_BASE;
+  constexpr uint32_t CLOCK_HZ	      = 250000000;
+//constexpr uint32_t SPI_CLOCK_HZ   = 400000000; // !! https://github.com/raspberrypi/linux/issues/2094 !!
+  constexpr uint32_t SPI_CLOCK_HZ   = 250000000;  // !! https://github.com/raspberrypi/linux/issues/2094 !!
+#elif RPI_VERSION == 1
+  constexpr uint32_t PHYS_REG_BASE  = PI_01_REG_BASE;
+  constexpr uint32_t CLOCK_HZ       = 250000000;
+  constexpr uint32_t SPI_CLOCK_HZ   = 250000000;
+#elif RPI_VERSION == 2 || RPI_VERSION == 3
+  constexpr uint32_t PHYS_REG_BASE  = PI_23_REG_BASE;
+  constexpr uint32_t CLOCK_HZ       = 250000000;
+  constexpr uint32_t SPI_CLOCK_HZ   = 250000000;
+#elif RPI_VERSION == 4
+  constexpr uint32_t PHYS_REG_BASE  = PI_4_REG_BASE;
+  constexpr uint32_t CLOCK_HZ	      = 375000000;
+  constexpr uint32_t SPI_CLOCK_HZ   = 200000000;
+#endif
 
 // Location of peripheral registers in bus memory
 // This can be seen on page 5 of ARM BCM2385 document
@@ -393,21 +393,6 @@ enum PWM_CHANNEL_MODE
 
 
 // --- Structs ---
-typedef struct 
-{
-  int fd,     // File descriptor
-      h,      // Memory handle
-      size;   // Memory size in bytes
-    
-  void *bus,  // Bus address
-       *virt, // Virtual address
-       *phys; // Physical address
-  
-  // Software directly accessing peripherals using the DMA engines must use bus addresses
-  // Software accessing RAM directly must use physical addresses
-  // Software accessing RAM using DMA engines must use bus addresses
-} AP_MemoryMap;
-
 typedef struct
 {
 
@@ -452,6 +437,21 @@ typedef struct
 
 } Pin_Info;
 
+typedef struct 
+{
+  int fd,     // File descriptor
+      h,      // Memory handle
+      size;   // Memory size in bytes
+    
+  void *bus,  // Bus address
+       *virt, // Virtual address
+       *phys; // Physical address
+  
+  // Software directly accessing peripherals using the DMA engines must use bus addresses
+  // Software accessing RAM directly must use physical addresses
+  // Software accessing RAM using DMA engines must use bus addresses
+} AP_MemoryMap;
+
 class Utility 
 {
   public:
@@ -465,6 +465,39 @@ class Utility
     static          void      write_reg_virt      (volatile uint32_t* reg, uint32_t value, uint32_t mask, uint32_t shift);
     static          void      write_reg_virt      (AP_MemoryMap& mem_map, uint32_t offset, uint32_t value, uint32_t mask, uint32_t shift);
     static          uint32_t  get_bits            (uint32_t input, uint32_t shift, uint32_t mask);  
+};
+
+class Peripheral
+{
+  protected:
+    int   m_fd;
+    int   m_h;
+    int   m_size;
+
+    void* m_bus;
+    void* m_virt;
+    void* m_phys;
+
+    static    uint32_t  page_roundup      (uint32_t addr);
+    static    void*     map_phys_to_virt  (void* phys_addr, unsigned size);
+              void      map_addresses     (void* phys_addr);
+
+    volatile  uint32_t* reg_virt          (uint32_t offset);
+
+  public:
+    Peripheral (void* phys_addr);
+   ~Peripheral (); 
+};
+
+class SPI : public Peripheral
+{
+  private:
+
+  public:
+    SPI (void* phys_addr);
+   ~SPI ();
+
+    double clock_rate (double frequency);
 };
 
 // --- AikaPi ---
@@ -494,6 +527,9 @@ class AikaPi
                   m_aux_regs;
 
   public:
+    static SPI spi;
+
+
     int   m_fifo_fd = 0;
 
     uint32_t m_fifo_size;
@@ -504,10 +540,12 @@ class AikaPi
     // --- General ---
     void    delay (uint32_t microseconds);
 
+    static uint32_t page_roundup (uint32_t address);
+
     // --- Memory ---
     void     map_periph       (AP_MemoryMap *mp, void *phys, int size);    
     void     map_devices      ();
-    void*    map_segment      (void *addr, int size);
+    void*    map_segment      (void *phys_addr, unsigned size);
     void     unmap_segment    ();
     void*    map_uncached_mem (AP_MemoryMap *mp, int size);
     void     unmap_periph_mem (AP_MemoryMap *mp);

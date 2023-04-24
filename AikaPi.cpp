@@ -4,6 +4,7 @@
 #include <bitset>
 #include <thread>
 #include <iostream>
+#include <exception>
 
 #include <poll.h>
 #include <fcntl.h>
@@ -12,11 +13,7 @@
 #include <sys/stat.h>
 #include <sys/ioctl.h>
 
-// #include <chrono>
-// #include <cstdio>
-// 
-// #include <cstdint>
-
+SPI AikaPi::spi (reinterpret_cast<void*>(SPI0_BASE));
 
 // --- Utility Class ---
 
@@ -153,6 +150,12 @@ delay (uint32_t microseconds)
   std::this_thread::sleep_for (std::chrono::duration <int, std::micro> (microseconds));
 }
 
+uint32_t AikaPi::
+page_roundup (uint32_t address)
+{
+  return ((address % PAGE_SIZE == 0) ? (address) : ((address + PAGE_SIZE) & ~(PAGE_SIZE - 1)));
+}
+
 // Allocate uncached memory, get bus & phys addresses
 void*
 AikaPi::map_uncached_mem (AP_MemoryMap *mp,
@@ -173,6 +176,114 @@ AikaPi::map_uncached_mem (AP_MemoryMap *mp,
   return(ret);
 }
 
+Peripheral:: 
+Peripheral (void* phys_addr)
+  : m_phys (phys_addr)
+{
+  map_addresses (m_phys);
+}
+
+Peripheral::
+~Peripheral ()
+{
+
+}
+
+uint32_t Peripheral:: 
+page_roundup (uint32_t addr)
+{
+  return ((addr % PAGE_SIZE == 0) ? (addr) : ((addr + PAGE_SIZE) & ~(PAGE_SIZE - 1)));
+}
+
+void* Peripheral::
+map_phys_to_virt (void*     phys_addr, 
+                  unsigned  size)
+{
+  int   fd;
+  void* mem;
+
+  size = page_roundup (size);
+
+  try
+  {
+    // open - https://man7.org/linux/man-pages/man2/open.2.html
+    if ((fd = open ("/dev/mem", O_RDWR | O_SYNC | O_CLOEXEC)) < 0)
+    {
+      throw (std::runtime_error ("Can't open /dev/mem. Maybe you forgot to use sudo?\n"));
+    }
+
+    // mmap - https://man7.org/linux/man-pages/man2/mmap.2.html
+    mem = mmap (0, size, PROT_WRITE | PROT_READ, MAP_SHARED, fd, 
+      reinterpret_cast<uint32_t>(phys_addr));
+
+    close (fd);
+
+    if (mem == MAP_FAILED)
+    {
+      throw (std::runtime_error ("Can't map memory.\n"));
+    }
+  }
+  catch (const std::runtime_error& err)
+  {
+    std::cerr << "Caught exception: " << err.what () << std::endl;
+
+    std::terminate ();
+  }
+
+  return (mem);
+}
+
+void Peripheral:: 
+map_addresses (void* phys_addr)
+{
+  m_phys  = phys_addr;
+  m_size  = page_roundup (PAGE_SIZE);
+  m_bus   = reinterpret_cast<uint8_t*>(phys_addr) - 
+            reinterpret_cast<uint8_t*>(PHYS_REG_BASE) + 
+            reinterpret_cast<uint8_t*>(BUS_REG_BASE);
+  m_virt  = map_phys_to_virt (phys_addr, m_size);
+}
+
+volatile uint32_t* Peripheral::
+reg_virt (uint32_t offset)
+{
+  uint32_t address = reinterpret_cast<uint32_t>(m_virt) + offset;
+
+  return (reinterpret_cast<volatile uint32_t*>(address));
+}
+
+SPI:: 
+SPI (void* phys_addr) : Peripheral (phys_addr)
+{
+
+}
+
+SPI::
+~SPI ()
+{
+
+}
+
+double SPI::
+clock_rate (double frequency)
+{
+  uint32_t divisor;
+
+  if (frequency <= SPI_CLOCK_HZ)
+  {
+    divisor = SPI_CLOCK_HZ / std::abs(frequency);
+  }
+
+  if (divisor > 65'536)
+  {
+    divisor = 65'536;
+  }
+
+  *(reg_virt (SPI_CLK)) = divisor;
+
+  return (SPI_CLOCK_HZ / divisor);
+}
+
 void
 AikaPi::map_devices ()
 {
@@ -184,6 +295,7 @@ AikaPi::map_devices ()
   map_periph (&m_regs_pwm,  (void *) PWM_BASE,   PAGE_SIZE);
   map_periph (&m_regs_st,   (void *) AP_ST_BASE, PAGE_SIZE);
 }
+
 
 // --- Memory ---
 void
@@ -216,31 +328,46 @@ AikaPi::unmap_periph_mem (AP_MemoryMap *mp)
 }
 
 // --- Virtual Memory ---
-// Get virtual memory segment for peripheral regs or physical mem
-void*
-AikaPi::map_segment (void *addr, 
-                     int   size)
-{
-  int fd;
-  void *mem;
 
-  size = PAGE_ROUNDUP(size);
-  
-  if ((fd = open ("/dev/mem", O_RDWR | O_SYNC | O_CLOEXEC)) < 0)
-    fail ("Error: can't open /dev/mem, run using sudo\n");
-        
-  mem = mmap (0, size, PROT_WRITE | PROT_READ, MAP_SHARED, fd, (uint32_t)addr);
-  
-  close(fd);
-  
-  #if DEBUG
-    printf("Map %p -> %p\n", (void *)addr, mem);
-  #endif
-  
-  if (mem == MAP_FAILED)
-    fail("Error: can't map memory\n");
-    
-  return(mem);
+
+/**
+ * @brief Map physical memory segment to the virtual address space
+ */
+void* AikaPi:: 
+map_segment (void*    phys_addr,
+             unsigned size)
+{
+  int   fd;
+  void* mem;
+
+  size = page_roundup (size);
+
+  try
+  {
+    // open - https://man7.org/linux/man-pages/man2/open.2.html
+    if ((fd = open ("/dev/mem", O_RDWR | O_SYNC | O_CLOEXEC)) < 0)
+    {
+      throw (std::runtime_error ("Can't open /dev/mem. Maybe you forgot to use sudo?\n"));
+    }
+
+    // mmap - https://man7.org/linux/man-pages/man2/mmap.2.html
+    mem = mmap (0, size, PROT_WRITE | PROT_READ, MAP_SHARED, fd, reinterpret_cast<uint32_t>(phys_addr));
+
+    close (fd);
+
+    if (mem == MAP_FAILED)
+    {
+      throw (std::runtime_error ("Can't map memory.\n"));
+    }
+  }
+  catch (const std::runtime_error& err)
+  {
+    std::cerr << "Caught exception: " << err.what () << std::endl;
+
+    std::terminate ();
+  }
+
+  return (mem);
 }
 
 // Free mapped memory
@@ -251,7 +378,6 @@ AikaPi::unmap_segment (void *mem,
   if (mem)
     munmap (mem, PAGE_ROUNDUP(size));
 }
-
 
 // --- DMA ---
 
@@ -627,8 +753,11 @@ spi_init (double frequency)
 
   // clear tx and rx fifo. one shot operation
   spi_clear_fifo ();
+
+  spi.clock_rate (frequency);
+  //spi_set_clock_rate (frequency);
   
-  return (spi_set_clock_rate (frequency));
+  return (1);
 }
 
 void AikaPi:: 
