@@ -1,21 +1,28 @@
 #ifndef AIKAPI_H
 #define AIKAPI_H
 
-#include <cstdint>
 #include <mutex>
-#include <bitset>
-#include <iostream>
-#include <map>
+
+// #include <cstdint>
+// 
+// #include <bitset>
+// #include <iostream>
+// #include <map>
 
 // Link to the BCM2385 datasheet:
 // // https://www.raspberrypi.org/app/uploads/2012/02/BCM2835-ARM-Peripherals.pdf
 
 #define RPI_VERSION 0
 
+// btw: The Pi-0 and Pi-3 do "overclock" the base clock up to 400 MHz on load. 
+// And it may cause SPI problems if the clock isn't fixed 
+// (i.e. at 250 MHz with core_freq=250 in /boot/config.txt).
+
 #if RPI_VERSION == 0
   #define PHYS_REG_BASE PI_01_REG_BASE
   #define CLOCK_HZ	    250000000
-  #define SPI_CLOCK_HZ  400000000
+  //#define SPI_CLOCK_HZ  400000000 // !! https://github.com/raspberrypi/linux/issues/2094 !!
+  #define SPI_CLOCK_HZ  250000000 // !! https://github.com/raspberrypi/linux/issues/2094 !!
 #elif RPI_VERSION == 1
   #define PHYS_REG_BASE PI_01_REG_BASE
   #define CLOCK_HZ	    250000000
@@ -63,10 +70,6 @@ constexpr uint32_t DMA_TI_DEST_DREQ   = 1 << 6;
 constexpr uint32_t DMA_TI_DEST_INC    = 1 << 4;
 constexpr uint32_t DMA_TI_WAIT_RESP   = 1 << 3;
 
-constexpr uint32_t DMA_CB_TI_PWM    = (DMA_TI_DREQ_PWM << 16) | DMA_TI_DEST_DREQ | DMA_TI_WAIT_RESP;
-constexpr uint32_t DMA_CB_TI_SPI_TX = (DMA_TI_DREQ_SPI_TX << 16) | DMA_TI_DEST_DREQ | DMA_TI_SRC_INC | DMA_TI_WAIT_RESP;
-constexpr uint32_t DMA_CB_TI_SPI_RX = (DMA_TI_DREQ_SPI_RX << 16) | DMA_TI_SRC_DREQ | DMA_TI_DEST_INC | DMA_TI_WAIT_RESP;
-
 // DMA control block macros
 #define REG(r, a)       REG_BUS_ADDR(r, a)
 #define MEM(m, a)       MEM_BUS_ADDR(m, a)
@@ -76,6 +79,9 @@ constexpr uint32_t DMA_CB_TI_SPI_RX = (DMA_TI_DREQ_SPI_RX << 16) | DMA_TI_SRC_DR
 #define DMA_PWM_DREQ    5
 #define DMA_SPI_TX_DREQ 6
 #define DMA_SPI_RX_DREQ 7
+
+
+
 
 // DMA register addresses offset by 0x100 * chan_num
 constexpr uint32_t DMA_CONBLK_AD = 0x04;
@@ -175,20 +181,20 @@ constexpr int DAC_CE_NUM = 1;
 // Page 148
 
 // SPI 0 pin definitions
-#define SPI0_CE0_PIN    8
-#define SPI0_CE1_PIN    7
-#define SPI0_MISO_PIN   9
-#define SPI0_MOSI_PIN   10
-#define SPI0_SCLK_PIN   11
+constexpr uint32_t SPI0_CE0_PIN   = 8;
+constexpr uint32_t SPI0_CE1_PIN   = 7;
+constexpr uint32_t SPI0_MISO_PIN  = 9;
+constexpr uint32_t SPI0_MOSI_PIN  = 10;
+constexpr uint32_t SPI0_SCLK_PIN  = 11;
 
 // SPI registers and constants
-constexpr int SPI0_BASE = (PHYS_REG_BASE + 0x204000);
-constexpr int SPI_CS    = 0x00;
-constexpr uint32_t SPI_FIFO = 0x04;
-constexpr int SPI_CLK   = 0x08;
-constexpr int SPI_DLEN  = 0x0c;
-constexpr int SPI_LTOH  = 0x10;
-constexpr int SPI_DC    = 0x14;
+constexpr uint32_t SPI0_BASE  = (PHYS_REG_BASE + 0x204000);
+constexpr uint32_t SPI_CS     = 0x00;
+constexpr uint32_t SPI_FIFO   = 0x04;
+constexpr uint32_t SPI_CLK    = 0x08;
+constexpr uint32_t SPI_DLEN   = 0x0c;
+constexpr uint32_t SPI_LTOH   = 0x10;
+constexpr uint32_t SPI_DC     = 0x14;
 
 constexpr uint32_t SPI_CS_CLEAR     = (3 << 4);
 constexpr uint32_t SPI_RX_FIFO_CLR  = (2 << 4);
@@ -201,38 +207,38 @@ constexpr uint32_t SPI_CE0          = 0;
 constexpr uint32_t SPI_CE1          = 1;
 
 // --- Auxiliaries---
-constexpr int SPI1_SCLK_PIN = 21;
-constexpr int SPI1_MOSI_PIN = 20;
-constexpr int SPI1_MISO_PIN = 19;
-constexpr int SPI1_CE2_PIN  = 16;
+constexpr uint32_t SPI1_SCLK_PIN = 21;
+constexpr uint32_t SPI1_MOSI_PIN = 20;
+constexpr uint32_t SPI1_MISO_PIN = 19;
+constexpr uint32_t SPI1_CE2_PIN  = 16;
 
-constexpr int AUX_BASE            = (PHYS_REG_BASE + 0x215000);
-constexpr int AUX_ENABLES         = 0x04;
-constexpr int AUX_SPI0_CNTL0_REG  = 0x80; 
-constexpr int AUX_SPI0_CNTL1_REG  = 0x84;
-constexpr int AUX_SPI0_STAT_REG   = 0x88;
-constexpr int AUX_SPI0_IO_REG     = 0xA0;
-constexpr int AUX_SPI0_PEEK_REG   = 0x8C;
-constexpr int AUX_SPI0_TXHOLD_REG = 0xB0;
+constexpr uint32_t AUX_BASE            = (PHYS_REG_BASE + 0x215000);
+constexpr uint32_t AUX_ENABLES         = 0x04;
+constexpr uint32_t AUX_SPI0_CNTL0_REG  = 0x80; 
+constexpr uint32_t AUX_SPI0_CNTL1_REG  = 0x84;
+constexpr uint32_t AUX_SPI0_STAT_REG   = 0x88;
+constexpr uint32_t AUX_SPI0_IO_REG     = 0xA0;
+constexpr uint32_t AUX_SPI0_PEEK_REG   = 0x8C;
+constexpr uint32_t AUX_SPI0_TXHOLD_REG = 0xB0;
 
-constexpr int AUX_SPI1_ENABLE     = (1 << 1); 
+constexpr uint32_t AUX_SPI1_ENABLE     = (1 << 1); 
 
 // --- GPIO --- 
-constexpr int GPIO_BASE       = (PHYS_REG_BASE + 0x200000);
-constexpr int GPIO_MODE0      = 0x00;
-constexpr int GPSET0          = 0x1C;
-constexpr int GPCLR0          = 0x28;
-constexpr int GPIO_LEV0       = 0x34;
-constexpr int GPIO_GPPUD      = 0x94;
-constexpr int GPIO_GPPUDCLK0  = 0x98;
+constexpr uint32_t GPIO_BASE       = (PHYS_REG_BASE + 0x200000);
+constexpr uint32_t GPIO_MODE0      = 0x00;
+constexpr uint32_t GPSET0          = 0x1C;
+constexpr uint32_t GPCLR0          = 0x28;
+constexpr uint32_t GPIO_LEV0       = 0x34;
+constexpr uint32_t GPIO_GPPUD      = 0x94;
+constexpr uint32_t GPIO_GPPUDCLK0  = 0x98;
 
-constexpr int GPIO_GPFSEL0    = 0x00;
-constexpr int GPIO_GPSET0     = 0x1C;
-constexpr int GPIO_GPCLR0     = 0x28;
-constexpr int GPIO_GPLEV0     = 0x34;
-constexpr int GPIO_GPEDS0     = 0x40;
-constexpr int GPIO_GPREN0     = 0x4C;
-constexpr int GPIO_GPFEN0     = 0x58;
+constexpr uint32_t GPIO_GPFSEL0    = 0x00;
+constexpr uint32_t GPIO_GPSET0     = 0x1C;
+constexpr uint32_t GPIO_GPCLR0     = 0x28;
+constexpr uint32_t GPIO_GPLEV0     = 0x34;
+constexpr uint32_t GPIO_GPEDS0     = 0x40;
+constexpr uint32_t GPIO_GPREN0     = 0x4C;
+constexpr uint32_t GPIO_GPFEN0     = 0x58;
 
 enum AP_GPIO_FUNC
 {
@@ -449,66 +455,16 @@ typedef struct
 class Utility 
 {
   public:
-    static uint32_t   get_bits   (uint32_t input, unsigned shift, uint32_t mask);
-    static void       reg_write  (AP_MemoryMap mem_map, uint32_t offset, uint32_t value, uint32_t mask, unsigned shift);
-
-
-    static void reg_write (volatile uint32_t *reg, 
-                           uint32_t           value, 
-                           uint32_t           mask, 
-                           unsigned           shift)
-    {
-      *reg = (*reg & ~(mask << shift)) | (value << shift);
-    }
-
-    static void      print_bits (int bits, unsigned size = 1);
-
-
-  // inline functions
-  static void print_u32 (uint32_t data)
-  {
-    std::cout << std::bitset <8> (data >> 24) << " " 
-              << std::bitset <8> (data >> 16) << " "
-              << std::bitset <8> (data >>  8) << " "
-              << std::bitset <8> (data      );
-    
-    std::cout << "\n";
-  }
-
-  // Return a uint32_t to the virtual address of specific register of a peripheral
-  static volatile uint32_t* get_reg32 (AP_MemoryMap mem_map, uint32_t  offset)
-  {
-    return (volatile uint32_t *)((uint32_t)(mem_map.virt) + (uint32_t)(offset));
-  }
-
-  // Return a uint32_t bus address of a specific register of a peripheral 
-  static uint32_t reg_bus_addr (AP_MemoryMap *_MemoryMap, uint32_t offset)
-  {
-    return ((uint32_t)(_MemoryMap->bus) + offset); 
-  }
-
-  // Return a bus address, given virtual address
-  static uint32_t mem_bus_addr (AP_MemoryMap *_MemoryMap, volatile void* offset)
-  {
-    return ((uint32_t)(offset) - (uint32_t)(_MemoryMap->virt) + 
-    (uint32_t)(_MemoryMap->bus));
-  }
-
-  // Get the offset of a specific DMA channel's register from DMA base
-  static uint32_t dma_chan_reg_offset (uint32_t dma_channel, uint32_t dma_register)
-  {
-    return ((dma_channel * 0x100) + dma_register);
-  }
-
-  static void disp_reg32 (AP_MemoryMap mem_map, uint32_t offset)
-  {
-    volatile uint32_t *reg = Utility::get_reg32 (mem_map, offset);
-
-    std::cout << std::bitset <8> (*reg >> 24) << " "
-              << std::bitset <8> (*reg >> 16) << " "
-              << std::bitset <8> (*reg >>  8) << " " 
-              << std::bitset <8> (*reg      ) << "\n"; 
-  }
+    static volatile uint32_t* reg_virt            (const AP_MemoryMap& mem_map, uint32_t offset);
+    static          uint32_t  reg_bus             (const AP_MemoryMap& mem_map, uint32_t offset);
+    static          uint32_t  uncached_reg_bus    (const AP_MemoryMap& mem_map, void*    offset);  
+    static          uint32_t  uncached_reg_bus    (const AP_MemoryMap& mem_map, volatile void* offset);  
+    static          uint32_t  dma_chan_reg_offset (uint32_t dma_channel,  uint32_t dma_offset);
+    static          void      disp_reg_virt       (const AP_MemoryMap& mem_map, uint32_t offset);
+    static          void      disp_bit32          (uint32_t bits);
+    static          void      write_reg_virt      (volatile uint32_t* reg, uint32_t value, uint32_t mask, uint32_t shift);
+    static          void      write_reg_virt      (AP_MemoryMap& mem_map, uint32_t offset, uint32_t value, uint32_t mask, uint32_t shift);
+    static          uint32_t  get_bits            (uint32_t input, uint32_t shift, uint32_t mask);  
 };
 
 // --- AikaPi ---
@@ -520,13 +476,15 @@ class AikaPi
 
     double m_pwm_freq         = 0.0;
     double m_pwm_clk_src_freq = 0.0;
-    double m_pwm_range        = 0.0;
+    
 
     Pin_Info m_pin_info [PI_MAX_USER_GPIO + 1];
 
     bool m_is_pwm_init = false;
 
   public:
+    double m_pwm_range = 0.0;
+
     AP_MemoryMap  m_regs_gpio,
                   m_regs_dma, 
                   m_regs_cm, 
@@ -539,7 +497,6 @@ class AikaPi
     int   m_fifo_fd = 0;
 
     uint32_t m_fifo_size;
-
 
     AikaPi ();
    ~AikaPi ();
@@ -580,7 +537,7 @@ class AikaPi
                                 AP_DMA_CB  *cbp, 
                                 uint32_t csval);
     
-    void dma_start (unsigned channel, AP_MemoryMap *uncached_dma_data, AP_DMA_CB *dma_cb);
+    //void dma_start (unsigned channel, AP_MemoryMap *uncached_dma_data, AP_DMA_CB *dma_cb);
 
     void     dma_disp         (int chan);
     void     dma_reset         (int chan);
@@ -597,7 +554,7 @@ class AikaPi
     void      AP_gpio_func   (unsigned pin, AP_GPIO_FUNC _AP_GPIO_FUNC);
     void      AP_gpio_pull   (unsigned pin, AP_GPIO_PULL _AP_GPIO_PULL);
     bool      AP_gpio_read   (unsigned pin);
-    void      AP_gpio_write  (unsigned pin, bool value); 
+    void      gpio_write  (unsigned pin, bool value); 
     uint32_t  AP_gpio_func   (unsigned pin);
     
     // --- SPI ---
@@ -653,8 +610,6 @@ class AikaPi
                   double          pwm_clk_src_freq  = AP_PWM_CLK_SRC_FREQ, 
                   AP_CM_CLK_SRC   _AP_CM_CLK_SRC    = AP_CM_PWM_CLK_SRC, 
                   AP_CM_CLK_MASH  _AP_CM_CLK_MASH   = AP_CM_PWM_CLK_MASH);
-
-    
     
     int     pwm_enable            (unsigned channel, bool value);
     int     pwm_mode              (unsigned channel, int value);
