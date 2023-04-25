@@ -14,6 +14,8 @@
 #include <sys/ioctl.h>
 
 SPI AikaPi::spi (reinterpret_cast<void*>(SPI0_BASE));
+DMA AikaPi::dma (reinterpret_cast<void*>(DMA_BASE));
+PWM AikaPi::pwm (reinterpret_cast<void*>(PWM_BASE));
 
 // --- Utility Class ---
 
@@ -176,11 +178,192 @@ AikaPi::map_uncached_mem (AP_MemoryMap *mp,
   return(ret);
 }
 
+uint32_t Mailbox::
+page_roundup  (uint32_t addr)
+{
+  return ((addr % PAGE_SIZE == 0) ? (addr) : ((addr + PAGE_SIZE) & ~(PAGE_SIZE - 1)));
+}
+
+int Mailbox:: 
+mb_open ()
+{
+  int fd ;
+
+  try
+  {
+    if ((fd = open ("/dev/vcio", 0)) < 0)
+      throw (std::runtime_error ("Can't open VC mailbox\n"));
+  }
+  catch (const std::runtime_error& err)
+  {
+    std::cerr << "Caught exception: " << err.what () << std::endl;
+
+    std::terminate ();
+  }
+
+  return (fd);
+}
+
+void Mailbox:: 
+mb_close (int fd) 
+{
+  close (fd);
+}
+
+uint32_t Mailbox:: 
+message (int fd,
+         Mailbox::MSG& msg)
+{
+  // https://jsandler18.github.io/extra/mailbox.html
+
+  uint32_t ret = 0;
+
+  for (int i = (msg.dlen) / 4; i <= (msg.blen) / 4; i += 4)
+  {
+    msg.uints[i++] = 0;
+  }
+
+  msg.len = (msg.blen + 6) * 4;
+  msg.req = 0;
+
+  try
+  {
+    // ioctl - https://man7.org/linux/man-pages/man2/ioctl.2.html
+    if (ioctl (fd, _IOWR (100, 0, void*), &msg) < 0)
+    {
+      throw (std::runtime_error ("VC IOCTL failed"));
+    }
+    else if ((msg.req & 0x80000000) == 0)
+    {
+      throw (std::runtime_error ("VC IOCTL error\n"));
+    }
+    else if ((msg.req & 0x80000001) == 0)
+    {
+      throw (std::runtime_error ("VC IOCTL partial error\n"));
+    }
+    else 
+    {
+      ret = msg.uints[0];
+    }
+  }
+  catch (const std::runtime_error& err)
+  {
+    std::cerr << "Caught exception: " << err.what () << std::endl;
+
+    std::terminate ();
+  }
+
+  return (ret);
+}
+
+/**
+ * @brief Allocates contiguous memory on the GPU.
+ */
+uint32_t Mailbox:: 
+mem_alloc (int      fd,
+           uint32_t size,
+           Mailbox::ALLOC_MEM_FLAG flags)
+{
+  // https://github.com/raspberrypi/firmware/wiki/Mailbox-property-interface#allocate-memory
+  
+  Mailbox::MSG msg = 
+  {
+    .tag    = static_cast<uint32_t>(TAG::ALLOCATE_MEMORY),
+    .blen   = 12,
+    .dlen   = 12,
+    .uints  =
+    {
+      page_roundup (size),
+      PAGE_SIZE,
+      static_cast<uint32_t>(flags)
+    } 
+  };
+
+  return (message (fd, msg));
+}
+
+/**
+ * @brief Lock buffer in place, and return a bus address. Must be done 
+ *        before memory can be accessed. bus address != 0 is success.
+ */
+void* Mailbox:: 
+mem_lock (int fd, 
+          int h)
+{
+  // https://github.com/raspberrypi/firmware/wiki/Mailbox-property-interface#lock-memory
+
+  Mailbox::MSG msg = 
+  {
+    .tag    = static_cast<uint32_t>(TAG::LOCK_MEMORY),
+    .blen   = 4,
+    .dlen   = 4,
+    .uints  =
+    {
+      static_cast<uint32_t>(h)
+    } 
+  };
+
+  return (h ? reinterpret_cast<void*>(message (fd, msg)) : 0);
+}
+
+/**
+ * @brief Unlock buffer. It retains contents, but may move. Needs to be locked 
+ *        before next use. status=0 is success.
+ */
+uint32_t Mailbox::
+mem_unlock  (int fd,
+             int h)
+{
+  // https://github.com/raspberrypi/firmware/wiki/Mailbox-property-interface#unlock-memory
+
+  Mailbox::MSG msg = 
+  {
+    .tag    = static_cast<uint32_t>(TAG::UNLOCK_MEMORY),
+    .blen   = 4,
+    .dlen   = 4,
+    .uints  =
+    {
+      static_cast<uint32_t>(h)
+    } 
+  };
+
+  return (h ? message (fd, msg) : 0);
+}
+
+/**
+ * @brief Free the memory buffer. status=0 is success.
+ */
+uint32_t Mailbox::
+mem_release (int fd,
+             int h)
+{
+  // https://github.com/raspberrypi/firmware/wiki/Mailbox-property-interface#release-memory
+
+  Mailbox::MSG msg = 
+  {
+    .tag    = static_cast<uint32_t>(TAG::RELEASE_MEMORY),
+    .blen   = 4,
+    .dlen   = 4,
+    .uints  =
+    {
+      static_cast<uint32_t>(h)
+    } 
+  };
+
+  return (h ? message (fd, msg) : 0);
+}  
+
 Peripheral:: 
 Peripheral (void* phys_addr)
   : m_phys (phys_addr)
 {
   map_addresses (m_phys);
+}
+
+Peripheral:: 
+Peripheral ()
+{
+
 }
 
 Peripheral::
@@ -220,7 +403,7 @@ map_phys_to_virt (void*     phys_addr,
 
     if (mem == MAP_FAILED)
     {
-      throw (std::runtime_error ("Can't map memory.\n"));
+      throw (std::runtime_error ("Can't map memory\n"));
     }
   }
   catch (const std::runtime_error& err)
@@ -244,12 +427,53 @@ map_addresses (void* phys_addr)
   m_virt  = map_phys_to_virt (phys_addr, m_size);
 }
 
-volatile uint32_t* Peripheral::
-reg_virt (uint32_t offset)
+void* Peripheral::
+conv_bus_to_phys (void* bus_addr)
 {
-  uint32_t address = reinterpret_cast<uint32_t>(m_virt) + offset;
+  uint32_t phys_addr = (reinterpret_cast<uint32_t>(bus_addr) & ~0xC0000000);
 
-  return (reinterpret_cast<volatile uint32_t*>(address));
+  return (reinterpret_cast<void*>(phys_addr));
+}
+
+volatile uint32_t* Peripheral::
+reg_virt (uint32_t offset) const
+{
+  uint32_t addr = reinterpret_cast<uint32_t>(m_virt) + offset;
+
+  return (reinterpret_cast<volatile uint32_t*>(addr));
+}
+
+uint32_t Peripheral::
+reg_bits (uint32_t offset, 
+          unsigned shift, 
+          uint32_t mask) const
+{
+  uint32_t reg = *(reg_virt (offset));
+
+  return ((reg >> shift) & mask);
+}
+
+void Peripheral::
+reg_bits (uint32_t offset, 
+          uint32_t value, 
+          unsigned shift, 
+          uint32_t mask) 
+{
+  *(reg_virt (offset)) = (*(reg_virt (offset)) & ~(mask << shift)) | (value << shift); 
+}
+
+uint32_t Peripheral::
+reg_bus (uint32_t offset)
+{
+  uint32_t addr = reinterpret_cast<uint32_t>(m_bus) + offset;
+
+  return (addr);
+}
+
+void* Peripheral:: 
+virt ()
+{
+  return (m_virt);
 }
 
 SPI:: 
@@ -282,6 +506,194 @@ clock_rate (double frequency)
   *(reg_virt (SPI_CLK)) = divisor;
 
   return (SPI_CLOCK_HZ / divisor);
+}
+
+void SPI:: 
+clear_fifo ()
+{
+  *(reg_virt (SPI_CS)) = 2 << 4;
+}
+
+DMA::
+DMA (void* phys_addr) : Peripheral (phys_addr)
+{
+
+}
+
+DMA:: 
+~DMA ()
+{
+
+}
+
+uint32_t DMA:: 
+dma_chan_reg_offset (unsigned chan, uint32_t offset) const
+{
+  return ((chan * 0x100) + offset);
+}
+
+volatile uint32_t* DMA::
+reg_virt (unsigned dma_chan, 
+          uint32_t offset) const
+{
+  return (Peripheral::reg_virt (dma_chan_reg_offset (dma_chan, offset)));
+}
+
+uint32_t DMA::
+reg_bits (unsigned dma_chan, 
+          uint32_t offset, 
+          unsigned shift, 
+          uint32_t mask) const
+{
+  return (Peripheral::reg_bits (dma_chan_reg_offset (dma_chan, offset), shift, mask));
+}
+
+void DMA::
+reg_bits (unsigned dma_chan, 
+          uint32_t offset,
+          unsigned value, 
+          unsigned shift, 
+          uint32_t mask)
+{
+  Peripheral::reg_bits (dma_chan_reg_offset (dma_chan, offset), value, shift, mask);
+}
+
+uint32_t DMA:: 
+dest_addr (unsigned dma_chan)
+{
+  return (*(reg_virt (dma_chan, DMA_DEST_AD)));
+}
+
+void DMA::
+start (      unsigned   dma_chan, 
+       const Uncached&  uncached,
+             AP_DMA_CB& cb)
+{
+  *(reg_virt (dma_chan, DMA_CONBLK_AD)) = uncached.uncached_reg_bus(reinterpret_cast<void*>(&cb));
+  *(reg_virt (dma_chan, DMA_CS))        = 2;  // Clear DMA End flag
+  *(reg_virt (dma_chan, DMA_DEBUG))     = 7;  // Clear error flags
+  *(reg_virt (dma_chan, DMA_CS))        = 1;  // Set ACTIVE bit to start DMA
+}
+
+void DMA::
+reset (unsigned dma_chan)
+{
+  *(reg_virt (dma_chan, DMA_CS)) = 1 << 31;
+
+  std::this_thread::sleep_for (std::chrono::duration<double, std::micro> (10.0));
+}
+
+bool DMA::
+is_running (unsigned dma_chan) const
+{
+  return (reg_bits (dma_chan, DMA_CS, 4));
+}
+
+void DMA::
+pause (unsigned dma_chan)
+{
+  reg_bits (dma_chan, DMA_CS, 0, 0);
+}
+
+void DMA::
+next_control_block (unsigned dma_chan, const AP_DMA_CB& cb)
+{
+
+}
+
+void DMA::
+abort (unsigned dma_chan)
+{
+  reg_bits (dma_chan, DMA_CS, 1, 31);
+}
+
+void DMA::
+run (unsigned dma_chan)
+{
+  reg_bits (dma_chan, DMA_CS, 1, 0);
+}
+
+Uncached:: 
+Uncached (unsigned size) : Peripheral ()
+{
+  map_uncached_mem (size);
+}
+
+Uncached:: 
+Uncached () : Peripheral ()
+{
+
+}
+
+Uncached::
+~Uncached ()
+{
+  
+}
+
+void* Uncached:: 
+map_uncached_mem (unsigned size)
+{
+  m_size  = page_roundup      (size);
+  m_fd    = Mailbox::mb_open  ();
+
+  // hehe sorry
+  Mailbox::ALLOC_MEM_FLAG flags = static_cast<Mailbox::ALLOC_MEM_FLAG> (
+    static_cast<uint32_t>(Mailbox::ALLOC_MEM_FLAG::COHERENT) | 
+    static_cast<uint32_t>(Mailbox::ALLOC_MEM_FLAG::ZERO)
+  );
+
+  try 
+  {
+    if ((m_h = Mailbox::mem_alloc (m_fd, m_size, flags)) <= 0)
+    {
+      throw (std::runtime_error ("mem_alloc failure\n"));
+    }
+    else if ((m_bus = Mailbox::mem_lock (m_fd, m_h)) == 0)
+    {
+      throw (std::runtime_error ("mem_lock failure\n"));
+    }
+    else if ((m_virt = map_phys_to_virt (conv_bus_to_phys (m_bus), m_size)) == 0)
+    {
+      throw (std::runtime_error ("map_phys_to_virt failure\n"));
+    }
+  }
+  catch (const std::runtime_error& err)
+  {
+    std::cerr << "Caught exception: " << err.what () << std::endl;
+
+    std::terminate ();
+  }
+
+  return (m_virt);  
+}
+
+uint32_t Uncached:: 
+uncached_reg_bus (void* offset) const
+{
+  uint32_t addr = reinterpret_cast<uint32_t>(offset) - 
+                  reinterpret_cast<uint32_t>(m_virt) + 
+                  reinterpret_cast<uint32_t>(m_bus);
+  
+  return (addr);
+}
+
+uint32_t Uncached:: 
+uncached_reg_bus (volatile void* offset) const
+{
+  return (uncached_reg_bus (const_cast<void*>(offset)));
+}
+
+PWM:: 
+PWM (void* phys_addr) : Peripheral (phys_addr)
+{
+
+}
+
+PWM:: 
+~PWM ()
+{
+
 }
 
 void
@@ -595,7 +1007,8 @@ AikaPi::vc_mem_alloc (int      fd,
     .uints =  
     {
       PAGE_ROUNDUP(size), 
-      PAGE_SIZE, flags
+      PAGE_SIZE, 
+      flags
     }
   };
                           
@@ -752,7 +1165,7 @@ spi_init (double frequency)
   gpio_set (SPI0_SCLK_PIN, AP_GPIO_FUNC_ALT0, AP_GPIO_PULL_OFF);
 
   // clear tx and rx fifo. one shot operation
-  spi_clear_fifo ();
+  spi.clear_fifo ();
 
   spi.clock_rate (frequency);
   //spi_set_clock_rate (frequency);
