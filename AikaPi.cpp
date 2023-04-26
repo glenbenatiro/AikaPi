@@ -512,10 +512,7 @@ disp_reg (uint32_t offset) const
 {
   uint32_t bits = *(reg (offset));
 
-  std::cout << std::bitset <8> (bits >> 24) << " "
-            << std::bitset <8> (bits >> 16) << " "
-            << std::bitset <8> (bits >>  8) << " "
-            << std::bitset <8> (bits      ) << std::endl;
+  print (bits);
 }
 
 /**
@@ -545,6 +542,19 @@ phys () const
   return (m_phys);
 }
 
+/**
+ * @brief prints a uint32_t value in 32-bit MSB form, 
+ *        with spaces between each byte
+ */
+void Peripheral::
+print (uint32_t value)
+{
+  std::cout << std::bitset <8> (value >> 24) << " "
+            << std::bitset <8> (value >> 16) << " "
+            << std::bitset <8> (value >>  8) << " "
+            << std::bitset <8> (value      ) << std::endl;
+}
+
 SPI:: 
 SPI (void* phys_addr) : Peripheral (phys_addr)
 {
@@ -572,7 +582,7 @@ clock_rate (double frequency)
     divisor = 65'536;
   }
 
-  *(reg (SPI_CLK)) = divisor;
+  reg (SPI_CLK, divisor);
 
   return (SPI_CLOCK_HZ / divisor);
 }
@@ -580,7 +590,7 @@ clock_rate (double frequency)
 void SPI:: 
 clear_fifo ()
 {
-  *(reg (SPI_CS)) = 2 << 4;
+  reg (SPI_CS, 2 << 4);
 }
 
 DMA::
@@ -1299,7 +1309,6 @@ spi_init (double frequency)
   spi.clear_fifo ();
 
   spi.clock_rate (frequency);
-  //spi_set_clock_rate (frequency);
   
   return (1);
 }

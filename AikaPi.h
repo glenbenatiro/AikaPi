@@ -543,6 +543,7 @@ class Peripheral
              void*     bus       () const;
              void*     virt      () const;
              void*     phys      () const;
+      static void      print     (uint32_t value);
 };
 
 class SPI : public Peripheral
