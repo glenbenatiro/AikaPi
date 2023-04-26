@@ -3,12 +3,6 @@
 
 #include <mutex>
 
-// #include <cstdint>
-// 
-// #include <bitset>
-// #include <iostream>
-// #include <map>
-
 // Link to the BCM2385 datasheet:
 // // https://www.raspberrypi.org/app/uploads/2012/02/BCM2835-ARM-Peripherals.pdf
 
@@ -455,10 +449,10 @@ typedef struct
 class Utility 
 {
   public:
-    static volatile uint32_t* reg_virt            (const AP_MemoryMap& mem_map, uint32_t offset);
-    static          uint32_t  reg_bus             (const AP_MemoryMap& mem_map, uint32_t offset);
-    static          uint32_t  uncached_reg_bus    (const AP_MemoryMap& mem_map, void*    offset);  
-    static          uint32_t  uncached_reg_bus    (const AP_MemoryMap& mem_map, volatile void* offset);  
+    static volatile uint32_t* reg            (const AP_MemoryMap& mem_map, uint32_t offset);
+    static          uint32_t  bus             (const AP_MemoryMap& mem_map, uint32_t offset);
+    static          uint32_t  bus    (const AP_MemoryMap& mem_map, void*    offset);  
+    static          uint32_t  bus    (const AP_MemoryMap& mem_map, volatile void* offset);  
     static          uint32_t  dma_chan_reg_offset (uint32_t dma_channel,  uint32_t dma_offset);
     static          void      disp_reg_virt       (const AP_MemoryMap& mem_map, uint32_t offset);
     static          void      disp_bit32          (uint32_t bits);
@@ -533,18 +527,22 @@ class Peripheral
     static    void*     map_phys_to_virt  (void* phys_addr, unsigned size);
               void      map_addresses     (void* phys_addr);
     static    void*     conv_bus_to_phys  (void* bus_addr);
+    static    void      unmap_segment     (void* virt_addr, unsigned size);
 
   public:
     Peripheral (void* phys_addr);
     Peripheral ();
    ~Peripheral (); 
 
-    volatile uint32_t* reg_virt (uint32_t offset) const;
-    
-    uint32_t  reg_bits  (uint32_t offset, unsigned shift, uint32_t mask = 0x1) const;
-    void      reg_bits  (uint32_t offset, uint32_t value, unsigned shift, uint32_t mask = 0x1);
-    uint32_t  reg_bus   (uint32_t offset);
-    void*     virt      ();
+    volatile uint32_t* reg       (uint32_t offset) const;
+             void      reg       (uint32_t offset, uint32_t value);
+             uint32_t  reg_bits  (uint32_t offset, unsigned shift, uint32_t mask = 0x1) const;
+             void      reg_bits  (uint32_t offset, uint32_t value, unsigned shift, uint32_t mask = 0x1);
+             uint32_t  bus       (uint32_t offset) const;
+             void      disp_reg  (uint32_t offset) const;
+             void*     bus       () const;
+             void*     virt      () const;
+             void*     phys      () const;
 };
 
 class SPI : public Peripheral
@@ -569,8 +567,8 @@ class Uncached : public Peripheral
    ~Uncached ();
 
    void*    map_uncached_mem  (unsigned size);
-   uint32_t uncached_reg_bus  (void* offset) const;
-   uint32_t uncached_reg_bus  (volatile void* offset) const;
+   uint32_t bus               (void* offset) const;
+   uint32_t bus               (volatile void* offset) const;
 };
 
 class DMA : public Peripheral 
@@ -582,18 +580,21 @@ class DMA : public Peripheral
     DMA (void* phys_addr);
    ~DMA ();
 
-  volatile uint32_t* reg_virt (unsigned dma_chan, uint32_t offset) const;
+  volatile uint32_t* reg      (unsigned dma_chan, uint32_t offset) const;
+           void      reg      (unsigned dma_chan, uint32_t offset, uint32_t value);
            uint32_t  reg_bits (unsigned dma_chan, uint32_t offset, unsigned shift, uint32_t mask = 0x1) const;
            void      reg_bits (unsigned dma_chan, uint32_t offset, unsigned value, unsigned shift, uint32_t mask = 0x1);
+           void      disp_reg (unsigned dma_chan, uint32_t offset) const;
            
   uint32_t  dest_addr           (unsigned dma_chan);
-  void      start               (unsigned dma_chan, const Uncached& uncached, AP_DMA_CB& cb);
+  void      start               (unsigned dma_chan, uint32_t start_cb_bus_addr);
   void      reset               (unsigned dma_chan);
   bool      is_running          (unsigned dma_chan) const;
   void      pause               (unsigned dma_chan);
-  void      next_control_block  (unsigned dma_chan, const AP_DMA_CB& cb);
+  void      next_cb             (unsigned dma_chan, uint32_t next_cb_bus_addr);
   void      abort               (unsigned dma_chan);
   void      run                 (unsigned dma_chan);
+  void      stop                (unsigned dma_chan);
 };
 
 class PWM : public Peripheral 
@@ -603,6 +604,20 @@ class PWM : public Peripheral
   public:
     PWM (void* phys_addr);
    ~PWM ();
+
+   void start     (unsigned channel);
+   void stop      (unsigned channel);
+   void algo      (unsigned channel, AP_PWM_ALGO algo);
+   void use_fifo  (unsigned channel, bool value);
+};
+
+class GPIO : public Peripheral 
+{
+  private: 
+
+  public: 
+    GPIO (void* phys_addr);
+   ~GPIO ();
 };
 
 // --- AikaPi ---
@@ -632,10 +647,10 @@ class AikaPi
                   m_aux_regs;
 
   public:
-    static SPI spi;
-    static DMA dma;
-    static PWM pwm;
-
+    static SPI  spi;
+    static DMA  dma;
+    static PWM  pwm;
+    static GPIO gpio;
 
     int   m_fifo_fd = 0;
 

@@ -13,9 +13,10 @@
 #include <sys/stat.h>
 #include <sys/ioctl.h>
 
-SPI AikaPi::spi (reinterpret_cast<void*>(SPI0_BASE));
-DMA AikaPi::dma (reinterpret_cast<void*>(DMA_BASE));
-PWM AikaPi::pwm (reinterpret_cast<void*>(PWM_BASE));
+SPI   AikaPi::spi   (reinterpret_cast<void*>(SPI0_BASE));
+DMA   AikaPi::dma   (reinterpret_cast<void*>(DMA_BASE));
+PWM   AikaPi::pwm   (reinterpret_cast<void*>(PWM_BASE));
+GPIO  AikaPi::gpio  (reinterpret_cast<void*>(GPIO_BASE));
 
 // --- Utility Class ---
 
@@ -24,7 +25,7 @@ PWM AikaPi::pwm (reinterpret_cast<void*>(PWM_BASE));
  *        peripheral's register 
  */
 volatile uint32_t* Utility::
-reg_virt (const AP_MemoryMap& mem_map,
+reg (const AP_MemoryMap& mem_map,
                 uint32_t      offset)
 {
   uint32_t address = (uint32_t)(mem_map.virt) + offset;
@@ -37,7 +38,7 @@ reg_virt (const AP_MemoryMap& mem_map,
  *        register 
  */
 uint32_t Utility:: 
-reg_bus (const AP_MemoryMap& mem_map, 
+bus (const AP_MemoryMap& mem_map, 
                uint32_t      offset)
 {
   uint32_t address = (uint32_t)(mem_map.bus) + offset;
@@ -50,7 +51,7 @@ reg_bus (const AP_MemoryMap& mem_map,
  *        peripheral's member data, given the member's virtual address. 
  */
 uint32_t Utility:: 
-uncached_reg_bus (const AP_MemoryMap& mem_map,
+bus (const AP_MemoryMap& mem_map,
                         void*         offset)
 {
   uint32_t address = (uint32_t)(offset) - (uint32_t)(mem_map.virt) + 
@@ -60,11 +61,11 @@ uncached_reg_bus (const AP_MemoryMap& mem_map,
 }
 
 /**
- * @brief Return a uint32_t of the bus address of an uncached
- *        peripheral's member data, given the member's virtual address. 
+ * @brief Return a uint32_t bus address of an uncached peripheral's 
+ *        member data, given the member's virtual address. 
  */
 uint32_t Utility:: 
-uncached_reg_bus (const    AP_MemoryMap& mem_map,
+bus (const    AP_MemoryMap& mem_map,
                   volatile void*         offset)
 {
   uint32_t address = (uint32_t)(offset) - (uint32_t)(mem_map.virt) + 
@@ -92,7 +93,7 @@ void Utility::
 disp_reg_virt (const AP_MemoryMap& mem_map,
                      uint32_t      offset)
 {
-  volatile uint32_t* reg = Utility::reg_virt (mem_map, offset);
+  volatile uint32_t* reg = Utility::reg (mem_map, offset);
 
   disp_bit32 (*reg);
 }
@@ -122,7 +123,7 @@ write_reg_virt (AP_MemoryMap& mem_map,
                 uint32_t      mask,
                 uint32_t      shift)
 {
-  write_reg_virt (reg_virt (mem_map, offset), value, mask, shift);
+  write_reg_virt (reg (mem_map, offset), value, mask, shift);
 }
 
 uint32_t Utility:: 
@@ -369,7 +370,7 @@ Peripheral ()
 Peripheral::
 ~Peripheral ()
 {
-
+  unmap_segment (m_virt, m_size);
 }
 
 uint32_t Peripheral:: 
@@ -435,45 +436,113 @@ conv_bus_to_phys (void* bus_addr)
   return (reinterpret_cast<void*>(phys_addr));
 }
 
+void Peripheral::   
+unmap_segment (void*    virt_addr, 
+               unsigned size)
+{
+  // munmap - https://man7.org/linux/man-pages/man3/munmap.3p.html
+  munmap (virt_addr, page_roundup (size));
+}
+
+/**
+ * @brief Returns a volatile uint32_t pointer to the virtual address of a 
+ *        peripheral's register 
+ */
 volatile uint32_t* Peripheral::
-reg_virt (uint32_t offset) const
+reg (uint32_t offset) const
 {
   uint32_t addr = reinterpret_cast<uint32_t>(m_virt) + offset;
 
   return (reinterpret_cast<volatile uint32_t*>(addr));
 }
 
+/**
+ * @brief Changes the entire contents of a peripheral's register 
+ * @param offset offset to the register
+ * @param value new uint32_t value of the register 
+ */
+void Peripheral::  
+reg (uint32_t offset, 
+     uint32_t value)
+{
+  *(reg (offset)) = value;
+}
+
+/**
+ * @brief Returns a user-defined number of bits from a peripheral's register 
+ */
 uint32_t Peripheral::
 reg_bits (uint32_t offset, 
           unsigned shift, 
           uint32_t mask) const
 {
-  uint32_t reg = *(reg_virt (offset));
+  uint32_t bits = *(reg (offset));
 
-  return ((reg >> shift) & mask);
+  return ((bits >> shift) & mask);
 }
 
+/**
+ * @brief Writes a user-defined number of bits to a peripheral's register 
+ */
 void Peripheral::
 reg_bits (uint32_t offset, 
           uint32_t value, 
           unsigned shift, 
           uint32_t mask) 
 {
-  *(reg_virt (offset)) = (*(reg_virt (offset)) & ~(mask << shift)) | (value << shift); 
+  *(reg (offset)) = (*(reg (offset)) & ~(mask << shift)) | (value << shift); 
 }
 
+/**
+ * @brief Returns the bus address of a peripheral's register 
+ */
 uint32_t Peripheral::
-reg_bus (uint32_t offset)
+bus (uint32_t offset) const
 {
   uint32_t addr = reinterpret_cast<uint32_t>(m_bus) + offset;
 
   return (addr);
 }
 
+/**
+ * @brief Displays the entire content of a peripheral's register in 32-bit form 
+ */
+void Peripheral::    
+disp_reg (uint32_t offset) const
+{
+  uint32_t bits = *(reg (offset));
+
+  std::cout << std::bitset <8> (bits >> 24) << " "
+            << std::bitset <8> (bits >> 16) << " "
+            << std::bitset <8> (bits >>  8) << " "
+            << std::bitset <8> (bits      ) << std::endl;
+}
+
+/**
+ * @brief Returns the peripheral's base bus address 
+ */
+void* Peripheral::
+bus () const
+{
+  return (m_bus);
+}
+
+/**
+ * @brief Returns the peripheral's base virtual address 
+ */
 void* Peripheral:: 
-virt ()
+virt () const
 {
   return (m_virt);
+}
+
+/**
+ * @brief Returns the peripheral's base physical address 
+ */
+void* Peripheral::
+phys () const
+{
+  return (m_phys);
 }
 
 SPI:: 
@@ -503,7 +572,7 @@ clock_rate (double frequency)
     divisor = 65'536;
   }
 
-  *(reg_virt (SPI_CLK)) = divisor;
+  *(reg (SPI_CLK)) = divisor;
 
   return (SPI_CLOCK_HZ / divisor);
 }
@@ -511,7 +580,7 @@ clock_rate (double frequency)
 void SPI:: 
 clear_fifo ()
 {
-  *(reg_virt (SPI_CS)) = 2 << 4;
+  *(reg (SPI_CS)) = 2 << 4;
 }
 
 DMA::
@@ -523,7 +592,7 @@ DMA (void* phys_addr) : Peripheral (phys_addr)
 DMA:: 
 ~DMA ()
 {
-
+  
 }
 
 uint32_t DMA:: 
@@ -533,10 +602,18 @@ dma_chan_reg_offset (unsigned chan, uint32_t offset) const
 }
 
 volatile uint32_t* DMA::
-reg_virt (unsigned dma_chan, 
+reg (unsigned dma_chan, 
           uint32_t offset) const
 {
-  return (Peripheral::reg_virt (dma_chan_reg_offset (dma_chan, offset)));
+  return (Peripheral::reg (dma_chan_reg_offset (dma_chan, offset)));
+}
+
+void DMA::
+reg (unsigned dma_chan, 
+     uint32_t offset, 
+     uint32_t value)
+{
+  Peripheral::reg (dma_chan_reg_offset (dma_chan, offset), value);
 }
 
 uint32_t DMA::
@@ -558,27 +635,33 @@ reg_bits (unsigned dma_chan,
   Peripheral::reg_bits (dma_chan_reg_offset (dma_chan, offset), value, shift, mask);
 }
 
+void DMA::
+disp_reg (unsigned dma_chan,
+          uint32_t offset) const
+{
+  Peripheral::disp_reg (dma_chan_reg_offset (dma_chan, offset));
+}
+
 uint32_t DMA:: 
 dest_addr (unsigned dma_chan)
 {
-  return (*(reg_virt (dma_chan, DMA_DEST_AD)));
+  return (*(reg (dma_chan, DMA_DEST_AD)));
 }
 
-void DMA::
-start (      unsigned   dma_chan, 
-       const Uncached&  uncached,
-             AP_DMA_CB& cb)
+void DMA:: 
+start (unsigned dma_chan,
+       uint32_t start_cb_bus_addr)
 {
-  *(reg_virt (dma_chan, DMA_CONBLK_AD)) = uncached.uncached_reg_bus(reinterpret_cast<void*>(&cb));
-  *(reg_virt (dma_chan, DMA_CS))        = 2;  // Clear DMA End flag
-  *(reg_virt (dma_chan, DMA_DEBUG))     = 7;  // Clear error flags
-  *(reg_virt (dma_chan, DMA_CS))        = 1;  // Set ACTIVE bit to start DMA
+  reg (dma_chan, DMA_CONBLK_AD, start_cb_bus_addr);
+  reg (dma_chan, DMA_CS,    2); // Clear DMA End flag
+  reg (dma_chan, DMA_DEBUG, 7); // Clear error flags
+  reg (dma_chan, DMA_CS,    1); // Set ACTIVE bit to start DMA
 }
 
 void DMA::
 reset (unsigned dma_chan)
 {
-  *(reg_virt (dma_chan, DMA_CS)) = 1 << 31;
+  reg (dma_chan, DMA_CS, 1 << 31);
 
   std::this_thread::sleep_for (std::chrono::duration<double, std::micro> (10.0));
 }
@@ -596,21 +679,28 @@ pause (unsigned dma_chan)
 }
 
 void DMA::
-next_control_block (unsigned dma_chan, const AP_DMA_CB& cb)
+next_cb (unsigned dma_chan, 
+         uint32_t next_cb_bus_addr)
 {
-
+  reg (dma_chan, DMA_NEXTCONBK, next_cb_bus_addr);
 }
 
 void DMA::
 abort (unsigned dma_chan)
 {
-  reg_bits (dma_chan, DMA_CS, 1, 31);
+  reg_bits (dma_chan, DMA_CS, 1, 30);
 }
 
 void DMA::
 run (unsigned dma_chan)
 {
   reg_bits (dma_chan, DMA_CS, 1, 0);
+}
+
+void DMA::
+stop (unsigned dma_chan)
+{
+  reset (dma_chan);
 }
 
 Uncached:: 
@@ -628,7 +718,9 @@ Uncached () : Peripheral ()
 Uncached::
 ~Uncached ()
 {
-  
+  Mailbox::mem_unlock   (m_fd, m_h);
+  Mailbox::mem_release  (m_fd, m_h);
+  Mailbox::mb_close     (m_fd);
 }
 
 void* Uncached:: 
@@ -669,7 +761,7 @@ map_uncached_mem (unsigned size)
 }
 
 uint32_t Uncached:: 
-uncached_reg_bus (void* offset) const
+bus (void* offset) const
 {
   uint32_t addr = reinterpret_cast<uint32_t>(offset) - 
                   reinterpret_cast<uint32_t>(m_virt) + 
@@ -679,9 +771,9 @@ uncached_reg_bus (void* offset) const
 }
 
 uint32_t Uncached:: 
-uncached_reg_bus (volatile void* offset) const
+bus (volatile void* offset) const
 {
-  return (uncached_reg_bus (const_cast<void*>(offset)));
+  return (bus (const_cast<void*>(offset)));
 }
 
 PWM:: 
@@ -692,6 +784,45 @@ PWM (void* phys_addr) : Peripheral (phys_addr)
 
 PWM:: 
 ~PWM ()
+{
+  stop (0);
+  stop (1);
+}
+
+void PWM::
+start (unsigned channel)
+{
+  reg_bits (PWM_CTL, 1, channel ? 8 : 0);
+}
+
+void PWM:: 
+stop(unsigned channel)
+{
+  reg_bits (PWM_CTL, 0, channel ? 8 : 0);
+}
+
+void PWM::
+algo (unsigned    channel, 
+      AP_PWM_ALGO algo)
+{
+  reg_bits (PWM_CTL, algo, channel ? 15 : 7);
+}
+
+void PWM::
+use_fifo (unsigned channel, 
+          bool     value)
+{
+  reg_bits (PWM_CTL, value, channel ? 13 : 5);
+}
+
+GPIO::
+GPIO (void* phys_addr) : Peripheral (phys_addr)
+{
+
+}
+
+GPIO::
+~GPIO ()
 {
 
 }
@@ -819,16 +950,16 @@ AikaPi::dma_start (AP_MemoryMap *mp,
 //            AP_MemoryMap *uncached_dma_data,
 //            AP_DMA_CB    *dma_cb)
 // {
-//   *(Utility::reg_virt (m_regs_dma, Utility::dma_chan_reg_offset (channel,
-//     DMA_CONBLK_AD))) = Utility::uncached_reg_bus (*uncached_dma_data, (uint32_t)(dma_cb));
+//   *(Utility::reg (m_regs_dma, Utility::dma_chan_reg_offset (channel,
+//     DMA_CONBLK_AD))) = Utility::bus (*uncached_dma_data, (uint32_t)(dma_cb));
   
-//   *(Utility::reg_virt (m_regs_dma, Utility::dma_chan_reg_offset (channel,
+//   *(Utility::reg (m_regs_dma, Utility::dma_chan_reg_offset (channel,
 //     DMA_CS))) = 1 << 1; // clear DMA End Flag
   
-//   *(Utility::reg_virt (m_regs_dma, Utility::dma_chan_reg_offset (channel,
+//   *(Utility::reg (m_regs_dma, Utility::dma_chan_reg_offset (channel,
 //     DMA_DEBUG))) = 7; // clear erorr flags
 
-//   *(Utility::reg_virt (m_regs_dma, Utility::dma_chan_reg_offset (channel,
+//   *(Utility::reg (m_regs_dma, Utility::dma_chan_reg_offset (channel,
 //     DMA_CS))) = 1; // start DMA
 // }
 
@@ -867,7 +998,7 @@ AikaPi::dma_wait(int chan)
 void 
 AikaPi::dma_pause (unsigned channel)
 {
-  volatile uint32_t *reg = Utility::reg_virt (m_regs_dma, 
+  volatile uint32_t *reg = Utility::reg (m_regs_dma, 
     DMA_REG (channel, DMA_CS));
 
   Utility::write_reg_virt (reg, 0, 1, 0);
@@ -881,7 +1012,7 @@ AikaPi::dma_pause (unsigned channel)
 bool 
 AikaPi::is_dma_paused (unsigned channel)
 {
-  volatile uint32_t *reg = Utility::reg_virt (m_regs_dma, 
+  volatile uint32_t *reg = Utility::reg (m_regs_dma, 
     DMA_REG (channel, DMA_CS));
 
   if (Utility::get_bits (*reg, 4, 1))
@@ -897,7 +1028,7 @@ AikaPi::is_dma_paused (unsigned channel)
 void 
 AikaPi::dma_play (unsigned channel)
 {
-  volatile uint32_t *reg = Utility::reg_virt (m_regs_dma, 
+  volatile uint32_t *reg = Utility::reg (m_regs_dma, 
     DMA_REG (channel, DMA_CS));
 
   Utility::write_reg_virt (reg, 1, 1, 0);
@@ -911,7 +1042,7 @@ AikaPi::dma_play (unsigned channel)
 void 
 AikaPi::dma_abort (unsigned channel)
 {
-  Utility::write_reg_virt (Utility::reg_virt (m_regs_dma, 
+  Utility::write_reg_virt (Utility::reg (m_regs_dma, 
     DMA_REG (channel, DMA_CS)), 1, 1, 30);
 }
 
@@ -1133,8 +1264,8 @@ AikaPi::terminate (int sig)
   
   spi_disable();
   //dma_reset(LAB_DMA_CHAN_PWM_PACING);
-  //dma_reset(LAB_DMA_CHAN_OSCILLOSCOPE_SPI_RX);
-  //dma_reset(LAB_DMA_CHAN_OSCILLOSCOPE_SPI_TX);
+  //dma_reset(LAB_DMA_CHAN_OSC_RX);
+  //dma_reset(LAB_DMA_CHAN_OSC_TX);
   
   // unmap_periph_mem (&m_vc_mem);
   unmap_periph_mem (&m_regs_st);
@@ -1176,7 +1307,7 @@ spi_init (double frequency)
 void AikaPi:: 
 spi_clear_fifo ()
 {
-  *(Utility::reg_virt (m_regs_spi, SPI_CS)) = 2 << 4;
+  *(Utility::reg (m_regs_spi, SPI_CS)) = 2 << 4;
 }
 
 // Set / clear SPI chip select
@@ -1494,13 +1625,13 @@ bb_spi_clear_SCLK  (Pin_Info *pi)
 void AikaPi:: 
 aux_spi1_master_enable ()
 {
-  Utility::write_reg_virt (Utility::reg_virt (m_aux_regs, AUX_ENABLES), 1, 1, 1);
+  Utility::write_reg_virt (Utility::reg (m_aux_regs, AUX_ENABLES), 1, 1, 1);
 }
     
 void AikaPi:: 
 aux_spi1_master_disable ()
 {
-  Utility::write_reg_virt (Utility::reg_virt (m_aux_regs, AUX_ENABLES), 0, 1, 1);
+  Utility::write_reg_virt (Utility::reg (m_aux_regs, AUX_ENABLES), 0, 1, 1);
 }
 
 
@@ -1530,13 +1661,13 @@ aux_spi0_init ()
 void AikaPi:: 
 aux_spi0_enable ()
 {
-  Utility::write_reg_virt (Utility::reg_virt (m_aux_regs, AUX_SPI0_CNTL0_REG), 1, 1, 11);
+  Utility::write_reg_virt (Utility::reg (m_aux_regs, AUX_SPI0_CNTL0_REG), 1, 1, 11);
 }
 
 void AikaPi::
 aux_spi0_disable ()
 {
-  Utility::write_reg_virt (Utility::reg_virt (m_aux_regs, AUX_SPI0_CNTL0_REG), 0, 1, 11);
+  Utility::write_reg_virt (Utility::reg (m_aux_regs, AUX_SPI0_CNTL0_REG), 0, 1, 11);
 }
 
 void AikaPi:: 
@@ -1546,7 +1677,7 @@ aux_spi0_frequency (double frequency)
   uint16_t divider = (static_cast<uint16_t>((static_cast<double>(CLOCK_HZ) /
     (2.0 * frequency)) - 1)) & 0x0FFF;
 
-  Utility::write_reg_virt (Utility::reg_virt (m_aux_regs, AUX_SPI0_CNTL0_REG), divider, 0xFFF, 20);
+  Utility::write_reg_virt (Utility::reg (m_aux_regs, AUX_SPI0_CNTL0_REG), divider, 0xFFF, 20);
 }
 
 void AikaPi::
@@ -1556,7 +1687,7 @@ aux_spi0_chip_selects (bool CE2,
 {
   uint8_t chip_selects = (CE2 << 2) | (CE1 << 1) | CE0;
 
-  Utility::write_reg_virt (Utility::reg_virt (m_aux_regs, AUX_SPI0_CNTL0_REG), chip_selects, 
+  Utility::write_reg_virt (Utility::reg (m_aux_regs, AUX_SPI0_CNTL0_REG), chip_selects, 
     0x03, 17);
 }
 
@@ -1667,14 +1798,14 @@ aux_spi0_read (char        *txbuf,
     printf ("data to write: %08X\n", data);
 
 
-    uint32_t val = Utility::get_bits (*(Utility::reg_virt 
+    uint32_t val = Utility::get_bits (*(Utility::reg 
       (m_aux_regs, AUX_SPI0_CNTL0_REG)), 6, 1);
 
     printf ("val is: %d\n", val);
 
 
     // write to AUXSPI0_IO Register
-    *(Utility::reg_virt (m_aux_regs, AUX_SPI0_IO_REG)) = data;
+    *(Utility::reg (m_aux_regs, AUX_SPI0_IO_REG)) = data;
 
 
     //g_reg32_peek (m_aux_regs, AUX_SPI0_IO_REG);
@@ -1682,10 +1813,10 @@ aux_spi0_read (char        *txbuf,
 
     // indicates the module is busy transferring data (?)
     // or should you use bit count? rx fifo level?
-    while ((*(Utility::reg_virt (m_aux_regs, AUX_SPI0_STAT_REG))) & (1 << 6))
+    while ((*(Utility::reg (m_aux_regs, AUX_SPI0_STAT_REG))) & (1 << 6))
     printf ("ok\n");
 
-    *rxbuf++ = *(Utility::reg_virt (m_aux_regs, AUX_SPI0_PEEK_REG));
+    *rxbuf++ = *(Utility::reg (m_aux_regs, AUX_SPI0_PEEK_REG));
     printf ("ok\n");
   }
 
@@ -1708,14 +1839,14 @@ aux_spi_xfer (uint8_t  channel,
     // uint32_t val = g_reg_read (m_aux_regs, AUX_SPI0_CNTL0_REG, 1, 6);
     // printf ("val is: %d\n", val);
 
-    *(Utility::reg_virt (m_aux_regs, AUX_SPI0_IO_REG)) = data;
+    *(Utility::reg (m_aux_regs, AUX_SPI0_IO_REG)) = data;
 
 
     // indicates the module is busy transferring data (?)
     // or should you use bit count? rx fifo level?
-    while ((*(Utility::reg_virt (m_aux_regs, AUX_SPI0_STAT_REG))) & (1 << 6))
+    while ((*(Utility::reg (m_aux_regs, AUX_SPI0_STAT_REG))) & (1 << 6))
 
-    *rxbuff++ = *(Utility::reg_virt (m_aux_regs, AUX_SPI0_PEEK_REG));
+    *rxbuff++ = *(Utility::reg (m_aux_regs, AUX_SPI0_PEEK_REG));
   }
 
   // deassert CE pin
@@ -1759,7 +1890,7 @@ void AikaPi::
 AP_gpio_func (unsigned     pin, 
               AP_GPIO_FUNC _AP_GPIO_FUNC)
 {
-  volatile uint32_t *reg = Utility::reg_virt (m_regs_gpio, GPFSEL0) + (pin / 10);
+  volatile uint32_t *reg = Utility::reg (m_regs_gpio, GPFSEL0) + (pin / 10);
   unsigned shift = (pin % 10) * 3;
 
   Utility::write_reg_virt (reg, _AP_GPIO_FUNC, 0x7, shift);
@@ -1785,7 +1916,7 @@ void AikaPi::
 gpio_write (unsigned pin,   
                bool     value)
 {
-  volatile uint32_t *reg = Utility::reg_virt (m_regs_gpio, 
+  volatile uint32_t *reg = Utility::reg (m_regs_gpio, 
     value ? GPSET0 : GPCLR0) + (pin / 32);
 
   *reg = 1 << (pin % 32);
@@ -1794,7 +1925,7 @@ gpio_write (unsigned pin,
 bool 
 AikaPi::AP_gpio_read (unsigned pin)
 {
-  volatile uint32_t *reg = Utility::reg_virt (m_regs_gpio, GPIO_LEV0) + (pin / 32);
+  volatile uint32_t *reg = Utility::reg (m_regs_gpio, GPIO_LEV0) + (pin / 32);
 
   return ((*reg >> (pin % 32)) & 1);
 }
@@ -1802,7 +1933,7 @@ AikaPi::AP_gpio_read (unsigned pin)
 uint32_t AikaPi:: 
 AP_gpio_func (unsigned pin)
 {
-  volatile uint32_t *reg = (Utility::reg_virt (m_regs_gpio, GPFSEL0)) + (pin / 10);
+  volatile uint32_t *reg = (Utility::reg (m_regs_gpio, GPFSEL0)) + (pin / 10);
 
   return (Utility::get_bits (*reg, (pin % 10) * 3, 0x7));
 }
@@ -1837,13 +1968,13 @@ pwm_start (unsigned channel)
 {
   if (channel == 0)
   {
-    *(Utility::reg_virt (m_regs_pwm, PWM_CTL)) |= 1 << 0;
+    *(Utility::reg (m_regs_pwm, PWM_CTL)) |= 1 << 0;
 
     return 1;
   }
   else if (channel == 1)
   {
-    *(Utility::reg_virt (m_regs_pwm, PWM_CTL)) |= 1 << 8;
+    *(Utility::reg (m_regs_pwm, PWM_CTL)) |= 1 << 8;
 
     return 1;
   }
@@ -1859,13 +1990,13 @@ pwm_stop (unsigned channel)
 {
   if (channel == 0)
   {
-    Utility::write_reg_virt (Utility::reg_virt (m_regs_pwm, PWM_CTL), 0, 1, 0);
+    Utility::write_reg_virt (Utility::reg (m_regs_pwm, PWM_CTL), 0, 1, 0);
 
     return 1;
   }
   else if (channel == 1)
   {
-    Utility::write_reg_virt (Utility::reg_virt (m_regs_pwm, PWM_CTL), 0, 1, 8);
+    Utility::write_reg_virt (Utility::reg (m_regs_pwm, PWM_CTL), 0, 1, 8);
 
     return 1;
   }
@@ -1887,7 +2018,7 @@ AikaPi::pwm_enable (unsigned channel,
 {
   if (channel == 1 || channel == 2)
   {
-    Utility::write_reg_virt (Utility::reg_virt (m_regs_pwm, PWM_CTL), value, 1,
+    Utility::write_reg_virt (Utility::reg (m_regs_pwm, PWM_CTL), value, 1,
       (channel == 2) ? 8 : 0);
 
     return value;
@@ -1904,7 +2035,7 @@ AikaPi::pwm_mode (unsigned channel,
 {
   if ((channel == 1 || channel == 2) & (value == 0 || value == 1))
   {
-    Utility::write_reg_virt (Utility::reg_virt (m_regs_pwm, PWM_CTL), value, 1,
+    Utility::write_reg_virt (Utility::reg (m_regs_pwm, PWM_CTL), value, 1,
       (channel == 2) ? 9 : 1);
 
     return value;
@@ -1923,7 +2054,7 @@ AikaPi::pwm_repeat_last_data  (unsigned channel,
 {
   if (channel == 1 || channel == 2)
   {
-    Utility::write_reg_virt (Utility::reg_virt (m_regs_pwm, PWM_CTL), value, 1,
+    Utility::write_reg_virt (Utility::reg (m_regs_pwm, PWM_CTL), value, 1,
       (channel == 2) ? 10 : 2);
 
     return value;
@@ -1942,7 +2073,7 @@ AikaPi::pwm_use_fifo  (unsigned channel,
 {
   if (channel == 0 || channel == 1)
   {
-    Utility::write_reg_virt (Utility::reg_virt (m_regs_pwm, PWM_CTL), value, 1,
+    Utility::write_reg_virt (Utility::reg (m_regs_pwm, PWM_CTL), value, 1,
       (channel == 0) ? 5 : 13);
 
     return 1;
@@ -1960,7 +2091,7 @@ AikaPi::pwm_channel_state (unsigned channel)
 {
   if (channel >= 1 && channel <=4)
   {
-    return (Utility::get_bits (*(Utility::reg_virt (m_regs_pwm, PWM_STA)), 
+    return (Utility::get_bits (*(Utility::reg (m_regs_pwm, PWM_STA)), 
       8 + channel, 1));
   }
   else 
@@ -1972,7 +2103,7 @@ AikaPi::pwm_channel_state (unsigned channel)
 int
 AikaPi::pwm_fifo (uint32_t value)
 {
-  *(Utility::reg_virt (m_regs_pwm, PWM_FIF1)) = value;
+  *(Utility::reg (m_regs_pwm, PWM_FIF1)) = value;
 
   return 0;
 }
@@ -1983,7 +2114,7 @@ AikaPi::pwm_range (unsigned channel,
 {
   if (channel == 1 || channel == 2)
   {
-    *(Utility::reg_virt (m_regs_pwm, (channel == 2) ? PWM_RNG2 : PWM_RNG1)) = value;
+    *(Utility::reg (m_regs_pwm, (channel == 2) ? PWM_RNG2 : PWM_RNG1)) = value;
 
     return value;
   }
@@ -1997,9 +2128,9 @@ AikaPi::pwm_range (unsigned channel,
 int
 AikaPi::pwm_reset ()
 {
-  *Utility::reg_virt (m_regs_pwm, PWM_CTL)   = 0x00000040;
-  *Utility::reg_virt (m_regs_pwm, PWM_STA)   = 0x000001FE;
-  *Utility::reg_virt (m_regs_pwm, PWM_RNG1)  = 0x00000020;
+  *Utility::reg (m_regs_pwm, PWM_CTL)   = 0x00000040;
+  *Utility::reg (m_regs_pwm, PWM_STA)   = 0x000001FE;
+  *Utility::reg (m_regs_pwm, PWM_RNG1)  = 0x00000020;
 
   return 1;
 }
@@ -2007,14 +2138,14 @@ AikaPi::pwm_reset ()
 void AikaPi:: 
 pwm_fifo_clear ()
 {
-  *(Utility::reg_virt (m_regs_pwm, PWM_CTL)) |= (1 << 6);
+  *(Utility::reg (m_regs_pwm, PWM_CTL)) |= (1 << 6);
 }
 
 void AikaPi:: 
 pwm_algo (unsigned    channel,
           AP_PWM_ALGO _AP_PWM_ALGO)
 {
-  Utility::write_reg_virt (Utility::reg_virt (m_regs_pwm, PWM_CTL), _AP_PWM_ALGO,
+  Utility::write_reg_virt (Utility::reg (m_regs_pwm, PWM_CTL), _AP_PWM_ALGO,
     1, (channel == 0 ? 7 : 15));
 }
 
@@ -2026,7 +2157,7 @@ pwm_frequency (unsigned channel,
   {
     m_pwm_range = m_pwm_clk_src_freq / frequency;
 
-    *(Utility::reg_virt (m_regs_pwm, (channel == 0 ? PWM_RNG1 : PWM_RNG2))) = 
+    *(Utility::reg (m_regs_pwm, (channel == 0 ? PWM_RNG1 : PWM_RNG2))) = 
       static_cast<uint32_t>(m_pwm_range);
 
     return (m_pwm_range);
@@ -2046,8 +2177,8 @@ pwm_duty_cycle (unsigned  channel,
     double dc_percentage = (std::fmod (duty_cycle, 100.0)) / (100.0);
     double fifo_data = m_pwm_range * dc_percentage;
 
-    *(Utility::reg_virt (m_regs_pwm, PWM_DAT1)) = fifo_data;
-    *(Utility::reg_virt (m_regs_pwm, PWM_FIF1)) = fifo_data;
+    *(Utility::reg (m_regs_pwm, PWM_DAT1)) = fifo_data;
+    *(Utility::reg (m_regs_pwm, PWM_FIF1)) = fifo_data;
 
     return dc_percentage;
   }
@@ -2065,7 +2196,7 @@ pwm_duty_cycle (unsigned  channel,
 void AikaPi:: 
 cm_pcm_clk_stop ()
 {
-  volatile uint32_t *p = Utility::reg_virt (m_regs_cm, CM_PCMCTL);
+  volatile uint32_t *p = Utility::reg (m_regs_cm, CM_PCMCTL);
 
   *p = *p | (1 << 5);
 
@@ -2075,7 +2206,7 @@ cm_pcm_clk_stop ()
 bool AikaPi:: 
 cm_pwm_clk_is_running ()
 {
-  uint32_t reg = *(Utility::reg_virt (m_regs_cm, CM_PWMCTL));
+  uint32_t reg = *(Utility::reg (m_regs_cm, CM_PWMCTL));
 
   return (((reg >> 7) & 0x1) ? true : false);
 }
@@ -2083,7 +2214,7 @@ cm_pwm_clk_is_running ()
 double AikaPi:: 
 cm_pwm_clk_divisor ()
 {
-  uint32_t reg = *(Utility::reg_virt (m_regs_cm, CM_PWMDIV));
+  uint32_t reg = *(Utility::reg (m_regs_cm, CM_PWMDIV));
 
   double integral   = (reg >> 12) & 0xfff;
   double fractional = (reg & 0xfff) * std::pow (10, -12);
@@ -2095,7 +2226,7 @@ cm_pwm_clk_divisor ()
 void AikaPi:: 
 cm_pwm_clk_stop ()
 {
-  volatile uint32_t *reg = Utility::reg_virt (m_regs_cm, CM_PWMCTL);
+  volatile uint32_t *reg = Utility::reg (m_regs_cm, CM_PWMCTL);
 
   *reg = (CM_PASSWD) | (1 << 5);
 
@@ -2107,7 +2238,7 @@ cm_pwm_clk_stop ()
 void AikaPi:: 
 cm_pwm_clk_run ()
 {
-  volatile uint32_t *reg = Utility::reg_virt (m_regs_cm, CM_PWMCTL);
+  volatile uint32_t *reg = Utility::reg (m_regs_cm, CM_PWMCTL);
 
   *reg |= (CM_PASSWD) | (1 << 4);
 
@@ -2117,7 +2248,7 @@ cm_pwm_clk_run ()
 void AikaPi:: 
 cm_pcm_clk_run ()
 {
-  volatile uint32_t *p = Utility::reg_virt (m_regs_cm, CM_PCMCTL);
+  volatile uint32_t *p = Utility::reg (m_regs_cm, CM_PCMCTL);
 
   *p = *p | CM_PASSWD | (1 << 4);
 
@@ -2135,7 +2266,7 @@ cm_pwm_clk_src (AP_CM_CLK_SRC _AP_CM_CLK_SRC)
   }
   else 
   {    
-    volatile uint32_t *reg = Utility::reg_virt (m_regs_cm, CM_PWMCTL);
+    volatile uint32_t *reg = Utility::reg (m_regs_cm, CM_PWMCTL);
 
     *reg |= (CM_PASSWD) | (_AP_CM_CLK_SRC << 0);
 
@@ -2150,8 +2281,8 @@ cm_pwm_clk_init (double         pwm_clk_src_freq,
                  AP_CM_CLK_SRC  _AP_CM_CLK_SRC, 
                  AP_CM_CLK_MASH _AP_CM_CLK_MASH)
 {
-  volatile uint32_t *reg = Utility::reg_virt (m_regs_cm, CM_PWMCTL);
-  volatile uint32_t *div = Utility::reg_virt (m_regs_cm, CM_PWMDIV);
+  volatile uint32_t *reg = Utility::reg (m_regs_cm, CM_PWMCTL);
+  volatile uint32_t *div = Utility::reg (m_regs_cm, CM_PWMDIV);
 
   m_pwm_clk_src_freq = pwm_clk_src_freq;
 
@@ -2194,7 +2325,7 @@ cm_pwm_clk_mash (AP_CM_CLK_MASH _AP_CM_CLK_MASH)
   }
   else 
   {
-    volatile uint32_t *reg = Utility::reg_virt (m_regs_cm, CM_PWMCTL);
+    volatile uint32_t *reg = Utility::reg (m_regs_cm, CM_PWMCTL);
 
     *reg |= (CM_PASSWD) | (_AP_CM_CLK_MASH << 9);
 
@@ -2213,7 +2344,7 @@ cm_pwm_clk_freq (double value)
   }
   else 
   {
-    volatile uint32_t *reg = Utility::reg_virt (m_regs_cm, CM_PWMDIV);
+    volatile uint32_t *reg = Utility::reg (m_regs_cm, CM_PWMDIV);
 
     m_pwm_clk_src_freq = value;
 
