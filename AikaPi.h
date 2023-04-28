@@ -6,7 +6,7 @@
 // Link to the BCM2385 datasheet:
 // // https://www.raspberrypi.org/app/uploads/2012/02/BCM2835-ARM-Peripherals.pdf
 
-#define RPI_VERSION 0
+#define RPI_VERSION 3
 
 // btw: The Pi-0 and Pi-3 do "overclock" the base clock up to 400 MHz on load. 
 // And it may cause SPI problems if the clock isn't fixed 
@@ -568,8 +568,8 @@ class Uncached : public Peripheral
    ~Uncached ();
 
    void*    map_uncached_mem  (unsigned size);
-   uint32_t bus               (void* offset) const;
-   uint32_t bus               (volatile void* offset) const;
+   uint32_t bus               (void* offset) const volatile;
+   uint32_t bus               (volatile void* offset) const volatile;
 };
 
 class DMA : public Peripheral 
@@ -587,7 +587,7 @@ class DMA : public Peripheral
            void      reg_bits (unsigned dma_chan, uint32_t offset, unsigned value, unsigned shift, uint32_t mask = 0x1);
            void      disp_reg (unsigned dma_chan, uint32_t offset) const;
            
-  uint32_t  dest_addr           (unsigned dma_chan);
+  uint32_t  dest_ad           (unsigned dma_chan);
   void      start               (unsigned dma_chan, uint32_t start_cb_bus_addr);
   void      reset               (unsigned dma_chan);
   bool      is_running          (unsigned dma_chan) const;
@@ -596,6 +596,7 @@ class DMA : public Peripheral
   void      abort               (unsigned dma_chan);
   void      run                 (unsigned dma_chan);
   void      stop                (unsigned dma_chan);
+  uint32_t  conblk_ad           (unsigned dma_chan) const;
 };
 
 class PWM : public Peripheral 
@@ -619,6 +620,11 @@ class GPIO : public Peripheral
   public: 
     GPIO (void* phys_addr);
    ~GPIO ();
+};
+
+class AUX_SPI : public Peripheral 
+{
+
 };
 
 // --- AikaPi ---
@@ -648,10 +654,11 @@ class AikaPi
                   m_aux_regs;
 
   public:
-    static SPI  spi;
-    static DMA  dma;
-    static PWM  pwm;
-    static GPIO gpio;
+    static SPI      spi;
+    static DMA      dma;
+    static PWM      pwm;
+    static GPIO     gpio;
+    static AUX_SPI  aux_spi;
 
     int   m_fifo_fd = 0;
 

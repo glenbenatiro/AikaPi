@@ -653,7 +653,7 @@ disp_reg (unsigned dma_chan,
 }
 
 uint32_t DMA:: 
-dest_addr (unsigned dma_chan)
+dest_ad (unsigned dma_chan)
 {
   return (*(reg (dma_chan, DMA_DEST_AD)));
 }
@@ -713,6 +713,12 @@ stop (unsigned dma_chan)
   reset (dma_chan);
 }
 
+uint32_t DMA::
+conblk_ad (unsigned dma_chan) const
+{
+  return (*(reg (dma_chan, DMA_CONBLK_AD)));
+}
+
 Uncached:: 
 Uncached (unsigned size) : Peripheral ()
 {
@@ -770,8 +776,11 @@ map_uncached_mem (unsigned size)
   return (m_virt);  
 }
 
+/**
+ * @brief Return a uint32_t bus address of the uncached mem's member variable 
+ */
 uint32_t Uncached:: 
-bus (void* offset) const
+bus (void* offset) const volatile
 {
   uint32_t addr = reinterpret_cast<uint32_t>(offset) - 
                   reinterpret_cast<uint32_t>(m_virt) + 
@@ -780,8 +789,11 @@ bus (void* offset) const
   return (addr);
 }
 
+/**
+ * @brief Return a uint32_t bus address of the uncached mem's member variable 
+ */
 uint32_t Uncached:: 
-bus (volatile void* offset) const
+bus (volatile void* offset) const volatile
 {
   return (bus (const_cast<void*>(offset)));
 }
