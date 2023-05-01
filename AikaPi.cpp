@@ -13,10 +13,11 @@
 #include <sys/stat.h>
 #include <sys/ioctl.h>
 
-SPI   AikaPi::spi   (reinterpret_cast<void*>(SPI0_BASE));
-DMA   AikaPi::dma   (reinterpret_cast<void*>(DMA_BASE));
-PWM   AikaPi::pwm   (reinterpret_cast<void*>(PWM_BASE));
-GPIO  AikaPi::gpio  (reinterpret_cast<void*>(GPIO_BASE));
+AikaPi::SPI  AikaPi::spi  (reinterpret_cast<void*>(SPI0_BASE));
+AikaPi::DMA  AikaPi::dma  (reinterpret_cast<void*>(DMA_BASE));
+AikaPi::PWM  AikaPi::pwm  (reinterpret_cast<void*>(PWM_BASE));
+AikaPi::GPIO AikaPi::gpio (reinterpret_cast<void*>(GPIO_BASE));
+AikaPi::AUX  AikaPi::aux (reinterpret_cast<void*>(AikaPi::AUX::BASE));
 
 // --- Utility Class ---
 
@@ -179,13 +180,14 @@ AikaPi::map_uncached_mem (AP_MemoryMap *mp,
   return(ret);
 }
 
-uint32_t Mailbox::
-page_roundup  (uint32_t addr)
+// Mailbox
+uint32_t AikaPi::Mailbox::
+page_roundup (uint32_t addr)
 {
   return ((addr % PAGE_SIZE == 0) ? (addr) : ((addr + PAGE_SIZE) & ~(PAGE_SIZE - 1)));
 }
 
-int Mailbox:: 
+int AikaPi::Mailbox:: 
 mb_open ()
 {
   int fd ;
@@ -205,15 +207,15 @@ mb_open ()
   return (fd);
 }
 
-void Mailbox:: 
+void AikaPi::Mailbox:: 
 mb_close (int fd) 
 {
   close (fd);
 }
 
-uint32_t Mailbox:: 
+uint32_t AikaPi::Mailbox:: 
 message (int fd,
-         Mailbox::MSG& msg)
+         AikaPi::Mailbox::MSG& msg)
 {
   // https://jsandler18.github.io/extra/mailbox.html
 
@@ -260,14 +262,14 @@ message (int fd,
 /**
  * @brief Allocates contiguous memory on the GPU.
  */
-uint32_t Mailbox:: 
+uint32_t AikaPi::Mailbox:: 
 mem_alloc (int      fd,
            uint32_t size,
-           Mailbox::ALLOC_MEM_FLAG flags)
+           AikaPi::Mailbox::ALLOC_MEM_FLAG flags)
 {
   // https://github.com/raspberrypi/firmware/wiki/Mailbox-property-interface#allocate-memory
   
-  Mailbox::MSG msg = 
+  AikaPi::Mailbox::MSG msg = 
   {
     .tag    = static_cast<uint32_t>(TAG::ALLOCATE_MEMORY),
     .blen   = 12,
@@ -287,13 +289,13 @@ mem_alloc (int      fd,
  * @brief Lock buffer in place, and return a bus address. Must be done 
  *        before memory can be accessed. bus address != 0 is success.
  */
-void* Mailbox:: 
+void* AikaPi::Mailbox:: 
 mem_lock (int fd, 
           int h)
 {
   // https://github.com/raspberrypi/firmware/wiki/Mailbox-property-interface#lock-memory
 
-  Mailbox::MSG msg = 
+  MSG msg = 
   {
     .tag    = static_cast<uint32_t>(TAG::LOCK_MEMORY),
     .blen   = 4,
@@ -311,13 +313,13 @@ mem_lock (int fd,
  * @brief Unlock buffer. It retains contents, but may move. Needs to be locked 
  *        before next use. status=0 is success.
  */
-uint32_t Mailbox::
+uint32_t AikaPi::Mailbox::
 mem_unlock  (int fd,
              int h)
 {
   // https://github.com/raspberrypi/firmware/wiki/Mailbox-property-interface#unlock-memory
 
-  Mailbox::MSG msg = 
+  AikaPi::Mailbox::MSG msg = 
   {
     .tag    = static_cast<uint32_t>(TAG::UNLOCK_MEMORY),
     .blen   = 4,
@@ -334,13 +336,13 @@ mem_unlock  (int fd,
 /**
  * @brief Free the memory buffer. status=0 is success.
  */
-uint32_t Mailbox::
+uint32_t AikaPi::Mailbox::
 mem_release (int fd,
              int h)
 {
   // https://github.com/raspberrypi/firmware/wiki/Mailbox-property-interface#release-memory
 
-  Mailbox::MSG msg = 
+  MSG msg = 
   {
     .tag    = static_cast<uint32_t>(TAG::RELEASE_MEMORY),
     .blen   = 4,
@@ -354,32 +356,32 @@ mem_release (int fd,
   return (h ? message (fd, msg) : 0);
 }  
 
-Peripheral:: 
+AikaPi::Peripheral:: 
 Peripheral (void* phys_addr)
   : m_phys (phys_addr)
 {
   map_addresses (m_phys);
 }
 
-Peripheral:: 
+AikaPi::Peripheral:: 
 Peripheral ()
 {
 
 }
 
-Peripheral::
+AikaPi::Peripheral::
 ~Peripheral ()
 {
   unmap_segment (m_virt, m_size);
 }
 
-uint32_t Peripheral:: 
+uint32_t AikaPi::Peripheral:: 
 page_roundup (uint32_t addr)
 {
   return ((addr % PAGE_SIZE == 0) ? (addr) : ((addr + PAGE_SIZE) & ~(PAGE_SIZE - 1)));
 }
 
-void* Peripheral::
+void* AikaPi::Peripheral::
 map_phys_to_virt (void*     phys_addr, 
                   unsigned  size)
 {
@@ -417,9 +419,11 @@ map_phys_to_virt (void*     phys_addr,
   return (mem);
 }
 
-void Peripheral:: 
+void AikaPi::Peripheral:: 
 map_addresses (void* phys_addr)
 {
+  std::cout << "Hello! : " << phys_addr << "\n";
+
   m_phys  = phys_addr;
   m_size  = page_roundup (PAGE_SIZE);
   m_bus   = reinterpret_cast<uint8_t*>(phys_addr) - 
@@ -428,7 +432,7 @@ map_addresses (void* phys_addr)
   m_virt  = map_phys_to_virt (phys_addr, m_size);
 }
 
-void* Peripheral::
+void* AikaPi::Peripheral::
 conv_bus_to_phys (void* bus_addr)
 {
   uint32_t phys_addr = (reinterpret_cast<uint32_t>(bus_addr) & ~0xC0000000);
@@ -436,7 +440,7 @@ conv_bus_to_phys (void* bus_addr)
   return (reinterpret_cast<void*>(phys_addr));
 }
 
-void Peripheral::   
+void AikaPi::Peripheral::   
 unmap_segment (void*    virt_addr, 
                unsigned size)
 {
@@ -448,7 +452,7 @@ unmap_segment (void*    virt_addr,
  * @brief Returns a volatile uint32_t pointer to the virtual address of a 
  *        peripheral's register 
  */
-volatile uint32_t* Peripheral::
+volatile uint32_t* AikaPi::Peripheral::
 reg (uint32_t offset) const
 {
   uint32_t addr = reinterpret_cast<uint32_t>(m_virt) + offset;
@@ -461,7 +465,7 @@ reg (uint32_t offset) const
  * @param offset offset to the register
  * @param value new uint32_t value of the register 
  */
-void Peripheral::  
+void AikaPi::Peripheral::  
 reg (uint32_t offset, 
      uint32_t value)
 {
@@ -471,7 +475,7 @@ reg (uint32_t offset,
 /**
  * @brief Returns a user-defined number of bits from a peripheral's register 
  */
-uint32_t Peripheral::
+uint32_t AikaPi::Peripheral::
 reg_bits (uint32_t offset, 
           unsigned shift, 
           uint32_t mask) const
@@ -484,7 +488,7 @@ reg_bits (uint32_t offset,
 /**
  * @brief Writes a user-defined number of bits to a peripheral's register 
  */
-void Peripheral::
+void AikaPi::Peripheral::
 reg_bits (uint32_t offset, 
           uint32_t value, 
           unsigned shift, 
@@ -496,7 +500,7 @@ reg_bits (uint32_t offset,
 /**
  * @brief Returns the bus address of a peripheral's register 
  */
-uint32_t Peripheral::
+uint32_t AikaPi::Peripheral::
 bus (uint32_t offset) const
 {
   uint32_t addr = reinterpret_cast<uint32_t>(m_bus) + offset;
@@ -507,7 +511,7 @@ bus (uint32_t offset) const
 /**
  * @brief Displays the entire content of a peripheral's register in 32-bit form 
  */
-void Peripheral::    
+void AikaPi::Peripheral::    
 disp_reg (uint32_t offset) const
 {
   uint32_t bits = *(reg (offset));
@@ -518,7 +522,7 @@ disp_reg (uint32_t offset) const
 /**
  * @brief Returns the peripheral's base bus address 
  */
-void* Peripheral::
+void* AikaPi::Peripheral::
 bus () const
 {
   return (m_bus);
@@ -527,7 +531,7 @@ bus () const
 /**
  * @brief Returns the peripheral's base virtual address 
  */
-void* Peripheral:: 
+void* AikaPi::Peripheral:: 
 virt () const
 {
   return (m_virt);
@@ -536,7 +540,7 @@ virt () const
 /**
  * @brief Returns the peripheral's base physical address 
  */
-void* Peripheral::
+void* AikaPi::Peripheral::
 phys () const
 {
   return (m_phys);
@@ -546,7 +550,7 @@ phys () const
  * @brief prints a uint32_t value in 32-bit MSB form, 
  *        with spaces between each byte
  */
-void Peripheral::
+void AikaPi::Peripheral::
 print (uint32_t value)
 {
   std::cout << std::bitset <8> (value >> 24) << " "
@@ -555,19 +559,19 @@ print (uint32_t value)
             << std::bitset <8> (value      ) << std::endl;
 }
 
-SPI:: 
+AikaPi::SPI:: 
 SPI (void* phys_addr) : Peripheral (phys_addr)
 {
 
 }
 
-SPI::
+AikaPi::SPI::
 ~SPI ()
 {
 
 }
 
-double SPI::
+double AikaPi::SPI::
 clock_rate (double frequency)
 {
   uint32_t divisor;
@@ -587,78 +591,78 @@ clock_rate (double frequency)
   return (SPI_CLOCK_HZ / divisor);
 }
 
-void SPI:: 
+void AikaPi::SPI:: 
 clear_fifo ()
 {
   reg (SPI_CS, 2 << 4);
 }
 
-DMA::
+AikaPi::DMA::
 DMA (void* phys_addr) : Peripheral (phys_addr)
 {
 
 }
 
-DMA:: 
+AikaPi::DMA:: 
 ~DMA ()
 {
   
 }
 
-uint32_t DMA:: 
+uint32_t AikaPi::DMA:: 
 dma_chan_reg_offset (unsigned chan, uint32_t offset) const
 {
   return ((chan * 0x100) + offset);
 }
 
-volatile uint32_t* DMA::
+volatile uint32_t* AikaPi::DMA::
 reg (unsigned dma_chan, 
           uint32_t offset) const
 {
-  return (Peripheral::reg (dma_chan_reg_offset (dma_chan, offset)));
+  return (AikaPi::Peripheral::reg (dma_chan_reg_offset (dma_chan, offset)));
 }
 
-void DMA::
+void AikaPi::DMA::
 reg (unsigned dma_chan, 
      uint32_t offset, 
      uint32_t value)
 {
-  Peripheral::reg (dma_chan_reg_offset (dma_chan, offset), value);
+  AikaPi::Peripheral::reg (dma_chan_reg_offset (dma_chan, offset), value);
 }
 
-uint32_t DMA::
+uint32_t AikaPi::DMA::
 reg_bits (unsigned dma_chan, 
           uint32_t offset, 
           unsigned shift, 
           uint32_t mask) const
 {
-  return (Peripheral::reg_bits (dma_chan_reg_offset (dma_chan, offset), shift, mask));
+  return (AikaPi::Peripheral::reg_bits (dma_chan_reg_offset (dma_chan, offset), shift, mask));
 }
 
-void DMA::
+void AikaPi::DMA::
 reg_bits (unsigned dma_chan, 
           uint32_t offset,
           unsigned value, 
           unsigned shift, 
           uint32_t mask)
 {
-  Peripheral::reg_bits (dma_chan_reg_offset (dma_chan, offset), value, shift, mask);
+  AikaPi::Peripheral::reg_bits (dma_chan_reg_offset (dma_chan, offset), value, shift, mask);
 }
 
-void DMA::
+void AikaPi::DMA::
 disp_reg (unsigned dma_chan,
           uint32_t offset) const
 {
-  Peripheral::disp_reg (dma_chan_reg_offset (dma_chan, offset));
+  AikaPi::Peripheral::disp_reg (dma_chan_reg_offset (dma_chan, offset));
 }
 
-uint32_t DMA:: 
+uint32_t AikaPi::DMA:: 
 dest_ad (unsigned dma_chan)
 {
   return (*(reg (dma_chan, DMA_DEST_AD)));
 }
 
-void DMA:: 
+void AikaPi::DMA:: 
 start (unsigned dma_chan,
        uint32_t start_cb_bus_addr)
 {
@@ -668,7 +672,7 @@ start (unsigned dma_chan,
   reg (dma_chan, DMA_CS,    1); // Set ACTIVE bit to start DMA
 }
 
-void DMA::
+void AikaPi::DMA::
 reset (unsigned dma_chan)
 {
   reg (dma_chan, DMA_CS, 1 << 31);
@@ -676,88 +680,88 @@ reset (unsigned dma_chan)
   std::this_thread::sleep_for (std::chrono::duration<double, std::micro> (10.0));
 }
 
-bool DMA::
+bool AikaPi::DMA::
 is_running (unsigned dma_chan) const
 {
   return (reg_bits (dma_chan, DMA_CS, 4));
 }
 
-void DMA::
+void AikaPi::DMA::
 pause (unsigned dma_chan)
 {
   reg_bits (dma_chan, DMA_CS, 0, 0);
 }
 
-void DMA::
+void AikaPi::DMA::
 next_cb (unsigned dma_chan, 
          uint32_t next_cb_bus_addr)
 {
   reg (dma_chan, DMA_NEXTCONBK, next_cb_bus_addr);
 }
 
-void DMA::
+void AikaPi::DMA::
 abort (unsigned dma_chan)
 {
   reg_bits (dma_chan, DMA_CS, 1, 30);
 }
 
-void DMA::
+void AikaPi::DMA::
 run (unsigned dma_chan)
 {
   reg_bits (dma_chan, DMA_CS, 1, 0);
 }
 
-void DMA::
+void AikaPi::DMA::
 stop (unsigned dma_chan)
 {
   reset (dma_chan);
 }
 
-uint32_t DMA::
+uint32_t AikaPi::DMA::
 conblk_ad (unsigned dma_chan) const
 {
   return (*(reg (dma_chan, DMA_CONBLK_AD)));
 }
 
-Uncached:: 
+AikaPi::Uncached:: 
 Uncached (unsigned size) : Peripheral ()
 {
   map_uncached_mem (size);
 }
 
-Uncached:: 
+AikaPi::Uncached:: 
 Uncached () : Peripheral ()
 {
 
 }
 
-Uncached::
+AikaPi::Uncached::
 ~Uncached ()
 {
-  Mailbox::mem_unlock   (m_fd, m_h);
-  Mailbox::mem_release  (m_fd, m_h);
-  Mailbox::mb_close     (m_fd);
+  AikaPi::Mailbox::mem_unlock   (m_fd, m_h);
+  AikaPi::Mailbox::mem_release  (m_fd, m_h);
+  AikaPi::Mailbox::mb_close     (m_fd);
 }
 
-void* Uncached:: 
+void* AikaPi::Uncached:: 
 map_uncached_mem (unsigned size)
 {
   m_size  = page_roundup      (size);
-  m_fd    = Mailbox::mb_open  ();
+  m_fd    = AikaPi::Mailbox::mb_open  ();
 
   // hehe sorry
-  Mailbox::ALLOC_MEM_FLAG flags = static_cast<Mailbox::ALLOC_MEM_FLAG> (
-    static_cast<uint32_t>(Mailbox::ALLOC_MEM_FLAG::COHERENT) | 
-    static_cast<uint32_t>(Mailbox::ALLOC_MEM_FLAG::ZERO)
+  AikaPi::Mailbox::ALLOC_MEM_FLAG flags = static_cast<AikaPi::Mailbox::ALLOC_MEM_FLAG> (
+    static_cast<uint32_t>(AikaPi::Mailbox::ALLOC_MEM_FLAG::COHERENT) | 
+    static_cast<uint32_t>(AikaPi::Mailbox::ALLOC_MEM_FLAG::ZERO)
   );
 
   try 
   {
-    if ((m_h = Mailbox::mem_alloc (m_fd, m_size, flags)) <= 0)
+    if ((m_h = AikaPi::Mailbox::mem_alloc (m_fd, m_size, flags)) <= 0)
     {
       throw (std::runtime_error ("mem_alloc failure\n"));
     }
-    else if ((m_bus = Mailbox::mem_lock (m_fd, m_h)) == 0)
+    else if ((m_bus = AikaPi::Mailbox::mem_lock (m_fd, m_h)) == 0)
     {
       throw (std::runtime_error ("mem_lock failure\n"));
     }
@@ -779,7 +783,7 @@ map_uncached_mem (unsigned size)
 /**
  * @brief Return a uint32_t bus address of the uncached mem's member variable 
  */
-uint32_t Uncached:: 
+uint32_t AikaPi::Uncached:: 
 bus (void* offset) const volatile
 {
   uint32_t addr = reinterpret_cast<uint32_t>(offset) - 
@@ -792,59 +796,86 @@ bus (void* offset) const volatile
 /**
  * @brief Return a uint32_t bus address of the uncached mem's member variable 
  */
-uint32_t Uncached:: 
+uint32_t AikaPi::Uncached:: 
 bus (volatile void* offset) const volatile
 {
   return (bus (const_cast<void*>(offset)));
 }
 
-PWM:: 
+AikaPi::PWM:: 
 PWM (void* phys_addr) : Peripheral (phys_addr)
 {
 
 }
 
-PWM:: 
+AikaPi::PWM:: 
 ~PWM ()
 {
   stop (0);
   stop (1);
 }
 
-void PWM::
+void AikaPi::PWM::
 start (unsigned channel)
 {
   reg_bits (PWM_CTL, 1, channel ? 8 : 0);
 }
 
-void PWM:: 
+void AikaPi::PWM:: 
 stop(unsigned channel)
 {
   reg_bits (PWM_CTL, 0, channel ? 8 : 0);
 }
 
-void PWM::
+void AikaPi::PWM::
 algo (unsigned    channel, 
       AP_PWM_ALGO algo)
 {
   reg_bits (PWM_CTL, algo, channel ? 15 : 7);
 }
 
-void PWM::
+void AikaPi::PWM::
 use_fifo (unsigned channel, 
           bool     value)
 {
   reg_bits (PWM_CTL, value, channel ? 13 : 5);
 }
 
-GPIO::
+AikaPi::GPIO::
 GPIO (void* phys_addr) : Peripheral (phys_addr)
 {
 
 }
 
-GPIO::
+AikaPi::GPIO::
 ~GPIO ()
+{
+
+}
+
+AikaPi::AUX:: 
+AUX (void* phys_addr) : Peripheral (phys_addr),
+  spi {SPI (0), SPI (0)}
+{
+
+}
+
+AikaPi::AUX::SPI::
+SPI (void* phys_addr) : Peripheral (phys_addr)
+{
+
+}
+
+void AikaPi::AUX::SPI::
+xfer (char*    rxd, 
+      char*    txd, 
+      unsigned length)
+{
+
+}
+
+void AikaPi::AUX::SPI::
+frequency (double value)
 {
 
 }

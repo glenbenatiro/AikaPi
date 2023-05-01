@@ -460,177 +460,213 @@ class Utility
     static          void      write_reg_virt      (AP_MemoryMap& mem_map, uint32_t offset, uint32_t value, uint32_t mask, uint32_t shift);
     static          uint32_t  get_bits            (uint32_t input, uint32_t shift, uint32_t mask);  
 };
-
-class Mailbox
-{
-  // https://github.com/raspberrypi/firmware/wiki/Mailbox-property-interface
-
-  public:
-
-    // Mailbox command/response structure
-    // https://jsandler18.github.io/extra/prop-channel.html
-    typedef struct 
-    {
-      uint32_t  len,         // Overall length (bytes)
-                req,         // Zero for request, 1<<31 for response
-                tag,         // Command number
-                blen,        // Buffer length (bytes)
-                dlen,        // Data length (bytes)
-                uints[32-5]; // Data (108 bytes maximum)
-    } MSG __attribute__ ((aligned (16)));
-
-    // VideoCore Mailbox Allocate Memory Flags
-    // https://github.com/raspberrypi/firmware/wiki/Mailbox-property-interface#allocate-memory
-    enum class ALLOC_MEM_FLAG
-    {
-      DISCARDABLE      = 1 << 0, // can be resized to 0 at any time. Use for cached data
-      NORMAL           = 0 << 2, // normal allocating alias. Don't use from ARM
-      DIRECT           = 1 << 2, // 0xC alias uncached
-      COHERENT         = 2 << 2, // 0x8 alias. Non-allocating in L2 but coherent
-      ZERO             = 1 << 4, // initialise buffer to all zeros
-      NO_INIT          = 1 << 5, // don't initialise (default is initialise to all ones)
-      HINT_PERMALOCK   = 1 << 6, // Likely to be locked for long periods of time
-
-      L1_NONALLOCATING = (DIRECT | COHERENT) // Allocating in L2
-    };
-
-    enum class TAG : uint32_t
-    {
-      ALLOCATE_MEMORY = 0x3000C,
-      LOCK_MEMORY     = 0x3000D,
-      UNLOCK_MEMORY   = 0x3000E,
-      RELEASE_MEMORY  = 0x3000F,
-    };
-
-    static  uint32_t  page_roundup  (uint32_t addr);
-    static  int       mb_open       ();
-    static  void      mb_close      (int fd); 
-    static  uint32_t  message       (int fd, Mailbox::MSG& msg); 
-    static  uint32_t  mem_alloc     (int fd, uint32_t size, Mailbox::ALLOC_MEM_FLAG flags);
-    static  void*     mem_lock      (int fd, int h);
-    static  uint32_t  mem_unlock    (int fd, int h);
-    static  uint32_t  mem_release   (int fd, int h);
-};
-
-class Peripheral
-{
-  protected:
-    int   m_fd    = 0;
-    int   m_h     = 0;
-    int   m_size  = 0;
-
-    void* m_bus   = nullptr;
-    void* m_virt  = nullptr;
-    void* m_phys  = nullptr;
-
-    static    uint32_t  page_roundup      (uint32_t addr);
-    static    void*     map_phys_to_virt  (void* phys_addr, unsigned size);
-              void      map_addresses     (void* phys_addr);
-    static    void*     conv_bus_to_phys  (void* bus_addr);
-    static    void      unmap_segment     (void* virt_addr, unsigned size);
-
-  public:
-    Peripheral (void* phys_addr);
-    Peripheral ();
-   ~Peripheral (); 
-
-    volatile uint32_t* reg       (uint32_t offset) const;
-             void      reg       (uint32_t offset, uint32_t value);
-             uint32_t  reg_bits  (uint32_t offset, unsigned shift, uint32_t mask = 0x1) const;
-             void      reg_bits  (uint32_t offset, uint32_t value, unsigned shift, uint32_t mask = 0x1);
-             uint32_t  bus       (uint32_t offset) const;
-             void      disp_reg  (uint32_t offset) const;
-             void*     bus       () const;
-             void*     virt      () const;
-             void*     phys      () const;
-      static void      print     (uint32_t value);
-};
-
-class SPI : public Peripheral
-{
-  private:
-
-  public:
-    SPI (void* phys_addr);
-   ~SPI ();
-
-    double  clock_rate (double frequency);
-    void    clear_fifo ();
-};
-
-class Uncached : public Peripheral
-{
-  private: 
     
-  public: 
-    Uncached (unsigned size);
-    Uncached ();
-   ~Uncached ();
 
-   void*    map_uncached_mem  (unsigned size);
-   uint32_t bus               (void* offset) const volatile;
-   uint32_t bus               (volatile void* offset) const volatile;
-};
-
-class DMA : public Peripheral 
-{
-  private:
-    uint32_t dma_chan_reg_offset (unsigned chan, uint32_t offset) const;
-
-  public:
-    DMA (void* phys_addr);
-   ~DMA ();
-
-  volatile uint32_t* reg      (unsigned dma_chan, uint32_t offset) const;
-           void      reg      (unsigned dma_chan, uint32_t offset, uint32_t value);
-           uint32_t  reg_bits (unsigned dma_chan, uint32_t offset, unsigned shift, uint32_t mask = 0x1) const;
-           void      reg_bits (unsigned dma_chan, uint32_t offset, unsigned value, unsigned shift, uint32_t mask = 0x1);
-           void      disp_reg (unsigned dma_chan, uint32_t offset) const;
-           
-  uint32_t  dest_ad           (unsigned dma_chan);
-  void      start               (unsigned dma_chan, uint32_t start_cb_bus_addr);
-  void      reset               (unsigned dma_chan);
-  bool      is_running          (unsigned dma_chan) const;
-  void      pause               (unsigned dma_chan);
-  void      next_cb             (unsigned dma_chan, uint32_t next_cb_bus_addr);
-  void      abort               (unsigned dma_chan);
-  void      run                 (unsigned dma_chan);
-  void      stop                (unsigned dma_chan);
-  uint32_t  conblk_ad           (unsigned dma_chan) const;
-};
-
-class PWM : public Peripheral 
-{
-  private:
-
-  public:
-    PWM (void* phys_addr);
-   ~PWM ();
-
-   void start     (unsigned channel);
-   void stop      (unsigned channel);
-   void algo      (unsigned channel, AP_PWM_ALGO algo);
-   void use_fifo  (unsigned channel, bool value);
-};
-
-class GPIO : public Peripheral 
-{
-  private: 
-
-  public: 
-    GPIO (void* phys_addr);
-   ~GPIO ();
-};
-
-class AUX_SPI : public Peripheral 
-{
-
-};
-
-// --- AikaPi ---
 
 class AikaPi
 {
+  private:
+    class RPI
+    {
+      public:
+        static constexpr uint32_t PI_01_REG_BASE = 0x20000000; // Pi Zero or 1 
+        static constexpr uint32_t PI_23_REG_BASE = 0x3F000000; // Pi 2 or 3
+        static constexpr uint32_t PI_4_REG_BASE  = 0xFE000000; // Pi 4
+
+        #if RPI_VERSION == 0
+          static constexpr uint32_t PHYS_REG_BASE  = PI_01_REG_BASE;
+          static constexpr uint32_t CLOCK_HZ	      = 250000000;
+          //static constexpr uint32_t SPI_CLOCK_HZ   = 400000000; // !! https://github.com/raspberrypi/linux/issues/2094 !!
+          static constexpr uint32_t SPI_CLOCK_HZ   = 250000000;  // !! https://github.com/raspberrypi/linux/issues/2094 !!
+        #elif RPI_VERSION == 1
+          static constexpr uint32_t PHYS_REG_BASE  = PI_01_REG_BASE;
+          static constexpr uint32_t CLOCK_HZ       = 250000000;
+          static constexpr uint32_t SPI_CLOCK_HZ   = 250000000;
+        #elif RPI_VERSION == 2 || RPI_VERSION == 3
+          static constexpr uint32_t PHYS_REG_BASE  = PI_23_REG_BASE;
+          static constexpr uint32_t CLOCK_HZ       = 250000000;
+          static constexpr uint32_t SPI_CLOCK_HZ   = 250000000;
+        #elif RPI_VERSION == 4
+          static constexpr uint32_t PHYS_REG_BASE  = PI_4_REG_BASE;
+          static constexpr uint32_t CLOCK_HZ	      = 375000000;
+          static constexpr uint32_t SPI_CLOCK_HZ   = 200000000;
+        #endif
+    };
+
+    class Mailbox
+    {
+      // https://github.com/raspberrypi/firmware/wiki/Mailbox-property-interface
+
+      private:
+        // Mailbox command/response structure
+        // https://jsandler18.github.io/extra/prop-channel.html
+        typedef struct 
+        {
+          uint32_t  len,         // Overall length (bytes)
+                    req,         // Zero for request, 1<<31 for response
+                    tag,         // Command number
+                    blen,        // Buffer length (bytes)
+                    dlen,        // Data length (bytes)
+                    uints[32-5]; // Data (108 bytes maximum)
+        } MSG __attribute__ ((aligned (16)));
+
+        enum class TAG : uint32_t
+        {
+          ALLOCATE_MEMORY = 0x3000C,
+          LOCK_MEMORY     = 0x3000D,
+          UNLOCK_MEMORY   = 0x3000E,
+          RELEASE_MEMORY  = 0x3000F,
+        };
+
+      public:
+        // VideoCore Mailbox Allocate Memory Flags
+        // https://github.com/raspberrypi/firmware/wiki/Mailbox-property-interface#allocate-memory
+        enum class ALLOC_MEM_FLAG
+        {
+          DISCARDABLE      = 1 << 0, // can be resized to 0 at any time. Use for cached data
+          NORMAL           = 0 << 2, // normal allocating alias. Don't use from ARM
+          DIRECT           = 1 << 2, // 0xC alias uncached
+          COHERENT         = 2 << 2, // 0x8 alias. Non-allocating in L2 but coherent
+          ZERO             = 1 << 4, // initialise buffer to all zeros
+          NO_INIT          = 1 << 5, // don't initialise (default is initialise to all ones)
+          HINT_PERMALOCK   = 1 << 6, // Likely to be locked for long periods of time
+
+          L1_NONALLOCATING = (DIRECT | COHERENT) // Allocating in L2
+        };
+
+        static  uint32_t  page_roundup  (uint32_t addr);
+        static  int       mb_open       ();
+        static  void      mb_close      (int fd); 
+        static  uint32_t  message       (int fd, MSG& msg); 
+        static  uint32_t  mem_alloc     (int fd, uint32_t size, ALLOC_MEM_FLAG flags);
+        static  void*     mem_lock      (int fd, int h);
+        static  uint32_t  mem_unlock    (int fd, int h);
+        static  uint32_t  mem_release   (int fd, int h);
+    };
+
+    class Peripheral
+    {
+      protected:
+        int   m_fd    = 0;
+        int   m_h     = 0;
+        int   m_size  = 0;
+
+        void* m_bus   = nullptr;
+        void* m_virt  = nullptr;
+        void* m_phys  = nullptr;
+
+        static    uint32_t  page_roundup      (uint32_t addr);
+        static    void*     map_phys_to_virt  (void* phys_addr, unsigned size);
+                  void      map_addresses     (void* phys_addr);
+        static    void*     conv_bus_to_phys  (void* bus_addr);
+        static    void      unmap_segment     (void* virt_addr, unsigned size);
+
+      public:
+        Peripheral  (void* phys_addr);
+        Peripheral  ();
+       ~Peripheral  (); 
+
+        volatile  uint32_t* reg       (uint32_t offset) const;
+                  void      reg       (uint32_t offset, uint32_t value);
+                  uint32_t  reg_bits  (uint32_t offset, unsigned shift, uint32_t mask = 0x1) const;
+                  void      reg_bits  (uint32_t offset, uint32_t value, unsigned shift, uint32_t mask = 0x1);
+                  uint32_t  bus       (uint32_t offset) const;
+                  void      disp_reg  (uint32_t offset) const;
+                  void*     bus       () const;
+                  void*     virt      () const;
+                  void*     phys      () const;
+        static    void      print     (uint32_t value);
+    }; 
+
+    class GPIO : public Peripheral 
+    {
+      public: 
+        GPIO (void* phys_addr);
+       ~GPIO ();
+    };
+
+
+  public:
+    class SPI : public Peripheral
+    {
+      public:
+        SPI (void* phys_addr);
+       ~SPI ();
+
+        double  clock_rate (double frequency);
+        void    clear_fifo ();
+    };
+
+    class DMA : public Peripheral 
+    {
+      private:
+        uint32_t dma_chan_reg_offset (unsigned chan, uint32_t offset) const;
+
+      public:
+        DMA (void* phys_addr);
+       ~DMA ();
+
+      volatile uint32_t* reg        (unsigned dma_chan, uint32_t offset) const;
+               void      reg        (unsigned dma_chan, uint32_t offset, uint32_t value);
+               uint32_t  reg_bits   (unsigned dma_chan, uint32_t offset, unsigned shift, uint32_t mask = 0x1) const;
+               void      reg_bits   (unsigned dma_chan, uint32_t offset, unsigned value, unsigned shift, uint32_t mask = 0x1);
+               void      disp_reg   (unsigned dma_chan, uint32_t offset) const;      
+               uint32_t  dest_ad    (unsigned dma_chan);
+               void      start      (unsigned dma_chan, uint32_t start_cb_bus_addr);
+               void      reset      (unsigned dma_chan);
+               bool      is_running (unsigned dma_chan) const;
+               void      pause      (unsigned dma_chan);
+               void      next_cb    (unsigned dma_chan, uint32_t next_cb_bus_addr);
+               void      abort      (unsigned dma_chan);
+               void      run        (unsigned dma_chan);
+               void      stop       (unsigned dma_chan);
+               uint32_t  conblk_ad  (unsigned dma_chan) const;
+    }; 
+    
+    class PWM : public Peripheral 
+    {
+      public:
+        PWM (void* phys_addr);
+       ~PWM ();
+
+      void start     (unsigned channel);
+      void stop      (unsigned channel);
+      void algo      (unsigned channel, AP_PWM_ALGO algo);
+      void use_fifo  (unsigned channel, bool value);
+    };
+
+    class Uncached : public Peripheral
+    {
+      public: 
+        Uncached (unsigned size);
+        Uncached ();
+       ~Uncached ();
+
+      void*    map_uncached_mem  (unsigned size);
+      uint32_t bus               (void* offset) const volatile;
+      uint32_t bus               (volatile void* offset) const volatile;
+    };
+
+    class AUX : public Peripheral 
+    { 
+      public:
+        static constexpr uint32_t BASE = RPI::PHYS_REG_BASE + 0x215000;
+
+        class SPI : public Peripheral
+        {
+          public:
+            SPI (void* phys_addr);
+
+            void xfer       (char* rxd, char* txd, unsigned length);
+            void frequency  (double value);
+        };
+          
+      public:
+        std::array<SPI, 2> spi;
+
+        AUX (void* phys_addr);
+    };
+
   private: 
     int m_pwm_value       = 10;
 
@@ -643,6 +679,13 @@ class AikaPi
     bool m_is_pwm_init = false;
 
   public:
+    static SPI  spi;
+    static DMA  dma;
+    static PWM  pwm;
+    static GPIO gpio;
+    static AUX  aux;
+
+
     double m_pwm_range = 0.0;
 
     AP_MemoryMap  m_regs_gpio,
@@ -653,12 +696,8 @@ class AikaPi
                   m_regs_st,
                   m_aux_regs;
 
-  public:
-    static SPI      spi;
-    static DMA      dma;
-    static PWM      pwm;
-    static GPIO     gpio;
-    static AUX_SPI  aux_spi;
+
+
 
     int   m_fifo_fd = 0;
 
