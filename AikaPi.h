@@ -551,6 +551,11 @@ namespace AP
     };
   };
 
+  namespace DMA
+  {
+    constexpr uint32_t BASE = RPI::PHYS_REG_BASE + 0x007000;
+  };
+
   namespace GPIO
   {
     constexpr uint32_t BASE       = RPI::PHYS_REG_BASE + 0x200000;
@@ -575,6 +580,7 @@ namespace AP
       MARKSPACE
     };
 
+    constexpr uint32_t BASE = RPI::PHYS_REG_BASE + 0x20C000;
     constexpr uint32_t CTL  = 0x00;
     constexpr uint32_t STA  = 0x04;
     constexpr uint32_t DMAC = 0x08;
@@ -587,6 +593,7 @@ namespace AP
 
   namespace SPI
   {
+    constexpr uint32_t BASE = RPI::PHYS_REG_BASE + 0x204000;
     constexpr uint32_t CS   = 0x00;
     constexpr uint32_t FIFO = 0x04;
     constexpr uint32_t CLK  = 0x08;
@@ -595,8 +602,14 @@ namespace AP
     constexpr uint32_t DC   = 0x14;
   };
 
-  namespace CLOCKMANAGER
+  namespace CLKMAN
   {
+    enum class TYPE
+    {
+      PCM,
+      PWM
+    };
+
     enum class MASH
     {
       INTEGER,
@@ -631,11 +644,14 @@ namespace AP
       HDMI,
     };
 
+    constexpr uint32_t BASE     = RPI::PHYS_REG_BASE + 0x101000;
+    constexpr uint32_t CTL_PWM  = 0x98;
+    constexpr uint32_t CTL_PCM  = 0xA0;
+    constexpr uint32_t DIV_PWM  = 0xA4;
+    constexpr uint32_t DIV_PCM  = 0x9C;
     constexpr uint32_t PASSWD   = 0x5a << 24;
-    constexpr uint32_t PCM_BASE = RPI::PHYS_REG_BASE + 0x101098;
-    constexpr uint32_t PWM_BASE = RPI::PHYS_REG_BASE + 0x1010a0;
-    constexpr uint32_t CTL      = 0x0;
-    constexpr uint32_t DIV      = 0x4;
+    constexpr uint32_t CTL      = 0x98;
+    constexpr uint32_t DIV      = 0xA4;
   };
 };
 
@@ -854,22 +870,50 @@ class AikaPi
         void master_disable_spi (bool channel);
     };
 
-    class ClockManager : public Peripheral
+    class ClockManager
     {
-      public:
-        ClockManager (void* phys_addr);
+      private:
+        class ClkManPeriph : public Peripheral
+        {
+          protected:
+            AP::CLKMAN::TYPE m_type;
 
-        void stop         ();
-        void start        ();
-        bool is_running   ();
-        void source       (AP::CLOCKMANAGER::SOURCE source);
-        void mash         (AP::CLOCKMANAGER::MASH mash);
-        void divisor      (uint32_t integral, uint32_t fractional);
-        void frequency    (double value, 
-                            AP::CLOCKMANAGER::SOURCE source_val = AP::CLOCKMANAGER::SOURCE::PLLD, 
-                            AP::CLOCKMANAGER::MASH   mash_val   = AP::CLOCKMANAGER::MASH::_1STAGE);
-        double frequency  ();
+            uint32_t off (uint32_t offset) const;
+          
+          public:
+            ClkManPeriph (void* phys_addr);
+
+            void stop         ();
+            void start        ();
+            bool is_running   ();
+            void source       (AP::CLKMAN::SOURCE source);
+            void mash         (AP::CLKMAN::MASH mash);
+            void divisor      (uint32_t integral, uint32_t fractional);
+            void frequency    (double value, 
+                                AP::CLKMAN::SOURCE source_val = AP::CLKMAN::SOURCE::PLLD, 
+                                AP::CLKMAN::MASH   mash_val   = AP::CLKMAN::MASH::_1STAGE);
+            double frequency  ();
+        };
+
+        class PCM : public ClkManPeriph
+        {
+          public:
+            PCM (void* phys_addr, AP::CLKMAN::TYPE type);
+        };
+
+        class PWM : public ClkManPeriph
+        {
+          public:
+            PWM (void* phys_addr, AP::CLKMAN::TYPE type);
+        };
+
+      public:
+        PCM pcm;
+        PWM pwm;
+
+        ClockManager (void* phys_addr);
     };
+
 
   public: 
     class Uncached : public Peripheral
@@ -901,7 +945,7 @@ class AikaPi
     static PWM          pwm;
     static GPIO         gpio;
     static AUX          aux;
-    static ClockManager cm_pwm;
+    static ClockManager cm;
 
     double m_pwm_range = 0.0;
 
@@ -912,8 +956,6 @@ class AikaPi
                   m_regs_spi, 
                   m_regs_st,
                   m_aux_regs;
-
-
 
 
     int   m_fifo_fd = 0;

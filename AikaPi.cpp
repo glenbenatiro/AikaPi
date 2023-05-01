@@ -2,26 +2,28 @@
 
 #include <cmath>
 #include <bitset>
+#include <string>
 #include <thread>
 #include <iostream>
 #include <exception>
 
 #include <poll.h>
 #include <fcntl.h>
+#include <errno.h>
+#include <string.h>
 #include <unistd.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/ioctl.h>
 
-AikaPi::SPI           AikaPi::spi     (reinterpret_cast<void*>(SPI0_BASE));
-AikaPi::DMA           AikaPi::dma     (reinterpret_cast<void*>(DMA_BASE));
-AikaPi::PWM           AikaPi::pwm     (reinterpret_cast<void*>(PWM_BASE));
-AikaPi::GPIO          AikaPi::gpio    (reinterpret_cast<void*>(AP::GPIO::BASE));
-AikaPi::AUX           AikaPi::aux     (reinterpret_cast<void*>(AP::AUX::BASE));
-AikaPi::ClockManager  AikaPi::cm_pwm  (reinterpret_cast<void*>(AP::CLOCKMANAGER::PWM_BASE));
+AikaPi::SPI           AikaPi::spi   (reinterpret_cast<void*>(AP::SPI::BASE));
+AikaPi::DMA           AikaPi::dma   (reinterpret_cast<void*>(AP::DMA::BASE));
+AikaPi::PWM           AikaPi::pwm   (reinterpret_cast<void*>(AP::PWM::BASE));
+AikaPi::GPIO          AikaPi::gpio  (reinterpret_cast<void*>(AP::GPIO::BASE));
+AikaPi::AUX           AikaPi::aux   (reinterpret_cast<void*>(AP::AUX::BASE));
+AikaPi::ClockManager  AikaPi::cm    (reinterpret_cast<void*>(AP::CLKMAN::BASE));
 
 // --- Utility Class ---
-
 /**
  * @brief Return a volatile uint32_t pointer of the virtual address of a 
  *        peripheral's register 
@@ -391,32 +393,25 @@ map_phys_to_virt (void*     phys_addr,
 
   size = page_roundup (size);
 
-  try
+  // open - https://man7.org/linux/man-pages/man2/open.2.html
+  if ((fd = open ("/dev/mem", O_RDWR | O_SYNC | O_CLOEXEC)) < 0)
   {
-    // open - https://man7.org/linux/man-pages/man2/open.2.html
-    if ((fd = open ("/dev/mem", O_RDWR | O_SYNC | O_CLOEXEC)) < 0)
-    {
-      throw (std::runtime_error ("Can't open /dev/mem. Maybe you forgot to use sudo?\n"));
-    }
-
-    // mmap - https://man7.org/linux/man-pages/man2/mmap.2.html
-    mem = mmap (0, size, PROT_WRITE | PROT_READ, MAP_SHARED, fd, 
-      reinterpret_cast<uint32_t>(phys_addr));
-
-    close (fd);
-
-    if (mem == MAP_FAILED)
-    {
-      throw (std::runtime_error ("Can't map memory\n"));
-    }
-  }
-  catch (const std::runtime_error& err)
-  {
-    std::cerr << "Caught exception: " << err.what () << std::endl;
-
-    std::terminate ();
+    throw (std::runtime_error ("Can't open /dev/mem. Maybe you forgot to use sudo?\n"));
   }
 
+  // mmap - https://man7.org/linux/man-pages/man2/mmap.2.html
+  mem = mmap (0, size, PROT_WRITE | PROT_READ, MAP_SHARED, fd, 
+    reinterpret_cast<uint32_t>(phys_addr));
+
+  close (fd);
+
+  if (mem == MAP_FAILED)
+  {
+    std::string msg ("Can't map memory: " + std::string (strerror (errno)));
+
+    throw (std::runtime_error (msg));
+  }
+  
   return (mem);
 }
 
@@ -431,6 +426,8 @@ map_addresses (void* phys_addr)
             reinterpret_cast<uint8_t*>(PHYS_REG_BASE) + 
             reinterpret_cast<uint8_t*>(BUS_REG_BASE);
   m_virt  = map_phys_to_virt (phys_addr, m_size);
+
+  std::cout << "Ok!\n";
 }
 
 void* AikaPi::Peripheral::
@@ -932,7 +929,7 @@ void AikaPi::PWM::
 frequency (bool   channel,
            double value)
 {
-  double range = std::round (cm_pwm.frequency () / value);
+  double range = std::round (cm.pwm.frequency () / value);
 
   reg (channel ? AP::PWM::RNG2 : AP::PWM::RNG1, static_cast<uint32_t>(range));
 }
@@ -1048,7 +1045,8 @@ SPI (bool channel, AUX* aux)
 uint32_t AikaPi::AUX::SPI:: 
 off (uint32_t offset) const
 {
-  uint32_t chan_offset = offset + (channel ? AP::AUX::SPI::SPI1_BASE : AP::AUX::SPI::SPI0_BASE);
+  uint32_t chan_offset = offset + 
+    (channel ? AP::AUX::SPI::SPI1_BASE : AP::AUX::SPI::SPI0_BASE);
 
   return (chan_offset);
 }
@@ -1270,63 +1268,107 @@ master_disable_spi (bool channel)
   reg_bits (AP::AUX::ENABLES, 0, channel ? 2 : 1);
 }
 
-AikaPi::ClockManager::
-ClockManager (void* phys_addr) : Peripheral (phys_addr)
+uint32_t AikaPi::ClockManager::ClkManPeriph:: 
+off (uint32_t offset) const
+{
+  switch (offset)
+  {
+    case (AP::CLKMAN::CTL):
+    {
+      if (m_type == AP::CLKMAN::TYPE::PCM)
+      {
+        return (AP::CLKMAN::CTL_PCM);
+      }
+      else if (m_type == AP::CLKMAN::TYPE::PWM)
+      {
+        return (AP::CLKMAN::CTL_PWM);
+      }
+
+      break;
+    }
+
+    case (AP::CLKMAN::DIV):
+    {
+      if (m_type == AP::CLKMAN::TYPE::PCM)
+      {
+        return (AP::CLKMAN::DIV_PCM);
+      }
+      else if (m_type == AP::CLKMAN::TYPE::PWM)
+      {
+        return (AP::CLKMAN::DIV_PWM);
+      }
+    
+      break;
+    }
+
+    default:
+    {
+      throw (std::runtime_error ("Invalid AP::CLKMAN offset value."));
+
+      break;
+    }
+  }
+
+  return 0;
+}
+
+AikaPi::ClockManager::ClkManPeriph:: 
+ClkManPeriph (void* phys_addr) :Peripheral (phys_addr)
 {
 
 }
 
-void AikaPi::ClockManager::
+void AikaPi::ClockManager::ClkManPeriph::
 stop ()
 {
-  reg (AP::CLOCKMANAGER::CTL, (AP::CLOCKMANAGER::PASSWD) | (1 << 5));
+  reg (off (AP::CLKMAN::CTL), (AP::CLKMAN::PASSWD) | (1 << 5));
 
   while (is_running ());
 }
 
-void AikaPi::ClockManager::
+void AikaPi::ClockManager::ClkManPeriph::
 start ()
 {
-  reg_bits (AP::CLOCKMANAGER::CTL, 1, 4);
+  reg_bits (off (AP::CLKMAN::CTL), 1, 4);
 
   while (!is_running ());
 }
 
-bool AikaPi::ClockManager:: 
+bool AikaPi::ClockManager::ClkManPeriph:: 
 is_running ()
 {
-  return (reg_bits (AP::CLOCKMANAGER::CTL, 7));
+  return (reg_bits (off (AP::CLKMAN::CTL), 7));
 }
 
-void AikaPi::ClockManager::
-source (AP::CLOCKMANAGER::SOURCE source)
+void AikaPi::ClockManager::ClkManPeriph::
+source (AP::CLKMAN::SOURCE source)
 {
   if (!is_running ())
   {
-    reg_bits (AP::CLOCKMANAGER::CTL, static_cast<uint32_t>(source), 0, 4);
+    reg_bits (off (AP::CLKMAN::CTL), static_cast<uint32_t>(source), 0, 4);
   }
 }        
 
-void AikaPi::ClockManager:: 
-mash (AP::CLOCKMANAGER::MASH mash)
+void AikaPi::ClockManager::ClkManPeriph:: 
+mash (AP::CLKMAN::MASH mash)
 {
   if (!is_running ())
   {
-    reg_bits (AP::CLOCKMANAGER::CTL, static_cast<uint32_t>(mash), 9, 2);
+    reg_bits (off (AP::CLKMAN::CTL), static_cast<uint32_t>(mash), 9, 2);
   }
 }
 
-void AikaPi::ClockManager:: 
+void AikaPi::ClockManager::ClkManPeriph:: 
 divisor (uint32_t integral, uint32_t fractional)
 {
-  reg (AP::CLOCKMANAGER::DIV, (AP::CLOCKMANAGER::PASSWD) | (integral << 12) |
+  reg (off (AP::CLKMAN::DIV), (AP::CLKMAN::PASSWD) | (integral << 12) |
     (fractional));
 }
 
-void AikaPi::ClockManager:: 
+void AikaPi::ClockManager::ClkManPeriph:: 
 frequency (double                   value,
-           AP::CLOCKMANAGER::SOURCE source_val,
-           AP::CLOCKMANAGER::MASH   mash_val)
+           AP::CLKMAN::SOURCE source_val,
+           AP::CLKMAN::MASH   mash_val)
 {
   // 1. Stop the clock generator
   stop ();
@@ -1357,16 +1399,36 @@ frequency (double                   value,
   start ();
 }
 
-double AikaPi::ClockManager:: 
+double AikaPi::ClockManager::ClkManPeriph:: 
 frequency ()
 {
-  uint32_t  reg_val       = *reg (AP::CLOCKMANAGER::DIV);
+  uint32_t  reg_val       = *reg (off (AP::CLKMAN::DIV));
   uint32_t  u_integral    = (reg_val >> 12) & 0xFFF;
   uint32_t  u_fractional  = reg_val & 0xFFF;
   double    d_divisor     = static_cast<double>(u_integral);
   double    d_fractional  = static_cast<double>(u_fractional) / 12.0;
   
   return (d_divisor + d_fractional);
+}
+
+AikaPi::ClockManager::PCM::
+PCM (void* phys_addr, AP::CLKMAN::TYPE type) : ClkManPeriph (phys_addr)
+{
+
+}
+
+AikaPi::ClockManager::PWM::
+PWM (void* phys_addr, AP::CLKMAN::TYPE type) : ClkManPeriph (phys_addr)
+{
+  
+}
+
+AikaPi::ClockManager::
+ClockManager (void* phys_addr) 
+  : pcm (phys_addr, AP::CLKMAN::TYPE::PCM), 
+    pwm (phys_addr, AP::CLKMAN::TYPE::PWM)
+{
+
 }
 
 void
