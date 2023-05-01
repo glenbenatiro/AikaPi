@@ -448,6 +448,64 @@ unmap_segment (void*    virt_addr,
   munmap (virt_addr, page_roundup (size));
 }
 
+uint32_t AikaPi::Peripheral:: 
+rreg (uint32_t* reg) const
+{
+  return (*reg);
+}
+
+void AikaPi::Peripheral:: 
+wreg (uint32_t* reg, uint32_t value)
+{
+  *reg = value;
+}
+
+uint32_t AikaPi::Peripheral::
+rbits (uint32_t*  reg, 
+       uint32_t   shift, 
+       uint32_t   mask) const
+{
+  return ((*reg >> shift) & mask);
+}
+
+void AikaPi::Peripheral::  
+wbits (uint32_t*  reg, 
+       uint32_t   value, 
+       uint32_t   shift, 
+       uint32_t   mask)
+{
+  *reg = ((*reg) & ~(mask << shift)) | (value << shift); 
+}
+
+uint32_t AikaPi::Peripheral:: 
+rreg (volatile uint32_t* reg) const
+{
+  return (rreg (const_cast<uint32_t*>(reg)));
+}
+
+void AikaPi::Peripheral:: 
+wreg (volatile uint32_t* reg, uint32_t value)
+{
+  wreg (const_cast<uint32_t*>(reg), value);
+}
+
+uint32_t AikaPi::Peripheral::
+rbits (volatile uint32_t*  reg, 
+                uint32_t   shift, 
+                uint32_t   mask) const
+{
+  return (rbits (const_cast<uint32_t*>(reg), shift, mask));
+}
+
+void AikaPi::Peripheral::  
+wbits (volatile uint32_t*  reg, 
+       uint32_t   value, 
+       uint32_t   shift, 
+       uint32_t   mask)
+{
+  wbits (const_cast<uint32_t*>(reg), value, shift, mask);
+}
+
 /**
  * @brief Returns a volatile uint32_t pointer to the virtual address of a 
  *        peripheral's register 
@@ -469,7 +527,7 @@ void AikaPi::Peripheral::
 reg (uint32_t offset, 
      uint32_t value)
 {
-  *(reg (offset)) = value;
+  wreg (reg (offset), value);
 }
 
 /**
@@ -477,12 +535,10 @@ reg (uint32_t offset,
  */
 uint32_t AikaPi::Peripheral::
 reg_bits (uint32_t offset, 
-          unsigned shift, 
+          uint32_t shift, 
           uint32_t mask) const
 {
-  uint32_t bits = *(reg (offset));
-
-  return ((bits >> shift) & mask);
+  return (rbits (reg (offset), shift, mask));
 }
 
 /**
@@ -491,10 +547,10 @@ reg_bits (uint32_t offset,
 void AikaPi::Peripheral::
 reg_bits (uint32_t offset, 
           uint32_t value, 
-          unsigned shift, 
+          uint32_t shift, 
           uint32_t mask) 
 {
-  *(reg (offset)) = (*(reg (offset)) & ~(mask << shift)) | (value << shift); 
+  wbits (reg (offset), value, shift, mask);
 }
 
 /**
@@ -506,17 +562,6 @@ bus (uint32_t offset) const
   uint32_t addr = reinterpret_cast<uint32_t>(m_bus) + offset;
 
   return (addr);
-}
-
-/**
- * @brief Displays the entire content of a peripheral's register in 32-bit form 
- */
-void AikaPi::Peripheral::    
-disp_reg (uint32_t offset) const
-{
-  uint32_t bits = *(reg (offset));
-
-  print (bits);
 }
 
 /**
@@ -547,11 +592,20 @@ phys () const
 }
 
 /**
+ * @brief Displays the entire content of a peripheral's register in 32-bit form 
+ */
+void AikaPi::Peripheral::    
+disp_reg (uint32_t offset) const
+{
+  print_u32 (rreg (reg (offset)));
+}
+
+/**
  * @brief prints a uint32_t value in 32-bit MSB form, 
  *        with spaces between each byte
  */
 void AikaPi::Peripheral::
-print (uint32_t value)
+print_u32 (uint32_t value)
 {
   std::cout << std::bitset <8> (value >> 24) << " "
             << std::bitset <8> (value >> 16) << " "
@@ -853,11 +907,78 @@ AikaPi::GPIO::
 
 }
 
+void AikaPi::GPIO::
+set (unsigned       pin, 
+     AP::GPIO::FUNC func_val, 
+     AP::GPIO::PULL pull_val, 
+     bool           value)
+{
+  func  (pin, func_val);
+  pull  (pin, pull_val);
+  write (pin, value);
+}
+
+void AikaPi::GPIO::
+func  (unsigned       pin, 
+       AP::GPIO::FUNC func_val)
+{
+  volatile uint32_t* gpf_reg = reg (GPFSEL0) + (pin / 10);
+  unsigned shift = (pin % 10) * 3;
+
+  rbits (gpf_reg, static_cast<uint32_t>(func_val), shift,0x7);
+}
+
+void AikaPi::GPIO::
+pull  (unsigned       pin, 
+       AP::GPIO::PULL pull_val)
+{
+  // 0. Select either GPPUDCLK0 or GPPUDCLK1 depending on pin
+  volatile uint32_t* gppud_reg = reg (GPPUDCLK0) + (pin / 32);
+  
+  // 1. Write to GPPUD to set the required control signal
+  reg (GPPUD, static_cast<uint32_t>(pull_val));
+
+  // 2. Wait 150 cycles - this provides the required set-up time
+  //    for the control signal
+  std::this_thread::sleep_for (std::chrono::duration<double, std::micro> (10));
+
+  // 3. Write to GPPUDCLK0/1 to clock the control signal into the
+  //    GPIO pads you wish to modify
+  reg (gppud_reg, pin << (pin % 32));
+
+  // 4. Wait 150 cycles - this provides the required hold time
+  //    for the control signal
+  std::this_thread::sleep_for (std::chrono::duration<double, std::micro> (10));
+
+  // 5. Write to GPPUD to remove the control signal
+  reg (GPPUD, 0);
+
+  // 6. Write to GPPUDCLK0/1 to remove the clock
+  reg (gppud_reg, 0);
+}
+
+void AikaPi::GPIO::
+write (unsigned pin,  
+       bool     value)
+{
+  volatile uint32_t* write_reg = reg (value ? GPSET0 : GPCLR0) + (pin / 32);
+
+  reg (write_reg, 1 << (pin % 32));
+}
+
+bool AikaPi::GPIO::
+read  (unsigned pin)
+{
+  volatile uint32_t* read_reg = reg (GPLEV0) + (pin / 32);
+
+  return ((*reg >> (pin % 32)) & 1);
+}
+
 AikaPi::AUX::SPI:: 
 SPI (bool channel, AUX* aux)
   : channel (channel), aux (aux)
 {
-
+  init ();
 }
 
 /**
@@ -876,6 +997,18 @@ bool AikaPi::AUX::SPI::
 is_rx_fifo_empty () const
 {
   return (aux->reg_bits (off (STAT_REG), 2));
+}
+
+void AikaPi::AUX::SPI:: 
+init ()
+{
+  enable                  ();
+  shift_length            (8);
+  shift_out_ms_bit_first  (true);
+  mode                    (0);
+  chip_selects            (3);
+  frequency               (100'000);
+  clear_fifos             ();
 }
 
 void AikaPi::AUX::SPI:: 
@@ -1043,9 +1176,27 @@ AUX (void* phys_addr) : Peripheral (phys_addr),
 void AikaPi::AUX::
 init ()
 {
-  // init SPI0 and SPI1
+  master_enable_spi (0);
+  master_enable_spi (1);
 
+}
 
+AikaPi::AUX::SPI& AikaPi::AUX:: 
+spi (bool channel)
+{
+  return (m_spi (channel));
+}
+
+void AikaPi::AUX::
+master_enable_spi (bool channel)
+{
+  reg_bits (ENABLES, 1, channel ? 2 : 1);
+}
+
+void AikaPi::AUX::
+master_disable_spi (bool channel)
+{
+  reg_bits (ENABLES, 0, channel ? 2 : 1);
 }
 
 void
@@ -2588,73 +2739,6 @@ cm_pwm_clk_freq (double value)
     
     return value;
   }
-}
-
-
-
-
-
-// --- FIFO ---
-int      
-AikaPi::fifo_create (const char *fifo_name)
-{
-  int ok = 0;
-
-  umask(0);
-
-  if (mkfifo (fifo_name, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH) < 0 && errno != EEXIST)
-    printf("Can't open FIFO '%s'\n", fifo_name);
-  else
-    ok = 1;
-
-  return (ok);
-}
-
-int      
-AikaPi::fifo_open_write (const char *fifo_name)
-{
-  int f = open (fifo_name, O_WRONLY | O_NONBLOCK);
-
-  return(f == -1 ? 0 : f);
-}
-
-int      
-AikaPi::fifo_write (int fd, void *data, int dlen)
-{
-  struct pollfd pollfd = {fd, POLLOUT, 0};
-
-  poll(&pollfd, 1, 0);
-
-  if (pollfd.revents&POLLOUT && !(pollfd.revents&POLLERR))
-    return(fd ? write (fd, data, dlen) : 0);
-
-  return (0);
-}
-
-uint32_t 
-AikaPi::fifo_get_free_space (int fd)
-{
-  return (fcntl(fd, F_GETPIPE_SZ));
-}
-
-void     
-AikaPi::fifo_destroy (char *fifo_name, 
-                                   int   fd)
-{
-  if (fd > 0)
-    close(fd);
-
-  unlink (fifo_name);
-}
-
-// Check if fifo exists
-int AikaPi:: 
-fifo_is_fifo(const char *fname)
-{
-  struct stat stat_p;
-  stat(fname, &stat_p);
-  
-  return(S_ISFIFO(stat_p.st_mode));
 }
 
 // --- Utility ---

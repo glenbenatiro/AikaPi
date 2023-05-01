@@ -462,6 +462,31 @@ class Utility
     static          uint32_t  get_bits            (uint32_t input, uint32_t shift, uint32_t mask);  
 };
 
+namespace AP
+{
+  namespace GPIO
+  {
+    enum class FUNC
+    {
+      INPUT   = 0,
+      OUTPUT  = 1,
+      ALT0    = 4,
+      ALT1    = 5,
+      ALT2    = 6,
+      ALT3    = 7,
+      ALT4    = 3,
+      ALT5    = 2
+    };
+
+    enum class PULL
+    {
+      OFF   = 0,
+      DOWN  = 1,
+      UP    = 2
+    };
+  }
+};
+
    
 class AikaPi
 {
@@ -554,35 +579,66 @@ class AikaPi
              *m_virt  = nullptr,
              *m_phys  = nullptr;
 
-        static    uint32_t  page_roundup      (uint32_t addr);
-        static    void*     map_phys_to_virt  (void* phys_addr, unsigned size);
-                  void      map_addresses     (void* phys_addr);
-        static    void*     conv_bus_to_phys  (void* bus_addr);
-        static    void      unmap_segment     (void* virt_addr, unsigned size);
+      protected:
+        static uint32_t page_roundup      (uint32_t addr);
+        static void*    map_phys_to_virt  (void* phys_addr, unsigned size);
+               void     map_addresses     (void* phys_addr);
+        static void*    conv_bus_to_phys  (void* bus_addr);
+        static void     unmap_segment     (void* virt_addr, unsigned size);
 
-      
       public:
-        Peripheral  (void* phys_addr);
-        Peripheral  ();
-       ~Peripheral  (); 
+        Peripheral (void* phys_addr);
+        Peripheral ();
+       ~Peripheral (); 
 
-       volatile  uint32_t*  reg       (uint32_t offset) const;
+                  uint32_t  rreg      (uint32_t* reg) const;
+                  void      wreg      (uint32_t* reg, uint32_t value);
+                  uint32_t  rbits     (uint32_t* reg, uint32_t shift, uint32_t mask = 0x1) const;
+                  void      wbits     (uint32_t* reg, uint32_t value, uint32_t shift, uint32_t mask = 0x1);
+
+                  uint32_t  rreg      (volatile uint32_t* reg) const;
+                  void      wreg      (volatile uint32_t* reg, uint32_t value);
+                  uint32_t  rbits     (volatile uint32_t* reg, uint32_t shift, uint32_t mask = 0x1) const;
+                  void      wbits     (volatile uint32_t* reg, uint32_t value, uint32_t shift, uint32_t mask = 0x1);
+
+        volatile  uint32_t* reg       (uint32_t offset) const;
                   void      reg       (uint32_t offset, uint32_t value);
-                  uint32_t  reg_bits  (uint32_t offset, unsigned shift, uint32_t mask = 0x1) const;
-                  void      reg_bits  (uint32_t offset, uint32_t value, unsigned shift, uint32_t mask = 0x1);
-                  uint32_t  bus       (uint32_t offset) const;
-                  void      disp_reg  (uint32_t offset) const;
+                  uint32_t  reg_bits  (uint32_t offset, uint32_t shift, uint32_t mask = 0x1) const;
+                  void      reg_bits  (uint32_t offset, uint32_t value, uint32_t shift, uint32_t mask = 0x1);
+                  
                   void*     bus       () const;
+                  uint32_t  bus       (uint32_t offset) const;
                   void*     virt      () const;
                   void*     phys      () const;
-        static    void      print     (uint32_t value);
+                  void      disp_reg  (uint32_t offet) const;
+        static    void      print_u32 (uint32_t value);
     }; 
 
     class GPIO : public Peripheral 
     {
+      private:
+        static constexpr uint32_t BASE      = RPI::PHYS_REG_BASE + 0x200000;
+        static constexpr uint32_t GPFSEL0   = 0x00;
+        static constexpr uint32_t GPSET0    = 0x1C;
+        static constexpr uint32_t GPCLR0    = 0x28;
+        static constexpr uint32_t GPLEV0    = 0x34;
+        static constexpr uint32_t GPEDS0    = 0x40;
+        static constexpr uint32_t GPREN0    = 0x4C;
+        static constexpr uint32_t GPFEN0    = 0x58;
+        static constexpr uint32_t GPHEN0    = 0x64;
+        static constexpr uint32_t GPLEN0    = 0x70;
+        static constexpr uint32_t GPPUD     = 0x94;
+        static constexpr uint32_t GPPUDCLK0 = 0x98;
+
       public: 
         GPIO (void* phys_addr);
        ~GPIO ();
+
+        void set    (unsigned pin, AP::GPIO::FUNC func_val, AP::GPIO::PULL pull_val, bool value = 0);
+        void func   (unsigned pin, AP::GPIO::FUNC func_val);
+        void pull   (unsigned pin, AP::GPIO::PULL pull_val);
+        void write  (unsigned pin, bool value);
+        bool read   (unsigned pin);
     };
 
     class SPI : public Peripheral
@@ -636,6 +692,9 @@ class AikaPi
     class AUX : public Peripheral 
     { 
       private:
+        static constexpr uint32_t ENABLES = 0x4;
+
+      private:
         class SPI
         {
           private: 
@@ -646,16 +705,19 @@ class AikaPi
             static constexpr uint32_t STAT_REG  = 0x08;
             static constexpr uint32_t IO_REG    = 0x10;
             static constexpr uint32_t PEEK_REG  = 0x14;
-            
+          
+          private:
             bool channel  = 0;
             AUX* aux      = nullptr;
 
+          private:
             uint32_t off (uint32_t offset) const;
           
           public:
             SPI (bool channel, AUX* aux);
 
             bool is_rx_fifo_empty       () const;
+            void init                   ();
             void enable                 ();
             void disable                ();
             void shift_length           (uint8_t value);
@@ -672,19 +734,19 @@ class AikaPi
             void write                  (char* txd, unsigned length);
         };
 
+      private:
         std::array<SPI, 2> m_spi;
         
       public:
         static constexpr uint32_t BASE = RPI::PHYS_REG_BASE + 0x215000;
-
+      
+      public:
         AUX (void* phys_addr);
 
-        void init ();
-
-        SPI& spi (bool channel)
-        {
-          return (m_spi[channel]);
-        }
+        void init               ();
+        SPI& spi                (bool channel);
+        void master_enable_spi  (bool channel);
+        void master_disable_spi (bool channel);
     };
 
   public: 
@@ -883,14 +945,6 @@ class AikaPi
     int     cm_pwm_clk_src        (AP_CM_CLK_SRC _AP_CM_CLK_SRC);
     int     cm_pwm_clk_mash       (AP_CM_CLK_MASH _AP_CM_CLK_MASH);
     double  cm_pwm_clk_freq       (double value);
-
-    // --- FIFO ---
-    int      fifo_create      (const char *fifo_name);
-    int      fifo_open_write  (const char *fifo_name);
-    int      fifo_write       (int fd, void *data, int dlen);
-    uint32_t fifo_get_free_space   (int fd);
-    void     fifo_destroy     (char *fifo_name, int fd);
-    int      fifo_is_fifo     (const char *fname);
 
     // --- Utility ---
     int sleep_nano (int nano);
