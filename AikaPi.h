@@ -304,14 +304,6 @@ constexpr unsigned PAGE_SIZE = 0x1000;
 
 
 
-
-// --- PWM ---
-enum AP_PWM_ALGO
-{
-  AP_PWM_ALGO_BALANCED  = 0,
-  AP_PWM_ALGO_MARKSPACE = 1
-};
-
 constexpr double AP_PWM_CLK_SRC_FREQ = 100'000'000.0;
 constexpr double PWM_VALUE = 2.0;
 
@@ -464,6 +456,79 @@ class Utility
 
 namespace AP
 {
+  namespace RPI
+  {
+    static constexpr uint32_t PI_01_REG_BASE = 0x20000000; // Pi Zero or 1 
+    static constexpr uint32_t PI_23_REG_BASE = 0x3F000000; // Pi 2 or 3
+    static constexpr uint32_t PI_4_REG_BASE  = 0xFE000000; // Pi 4
+
+    #if RPI_VERSION == 0
+      static constexpr uint32_t PHYS_REG_BASE  = PI_01_REG_BASE;
+      static constexpr uint32_t CLOCK_HZ	      = 250000000;
+      //static constexpr uint32_t SPI_CLOCK_HZ   = 400000000; // !! https://github.com/raspberrypi/linux/issues/2094 !!
+      static constexpr uint32_t SPI_CLOCK_HZ   = 250000000;  // !! https://github.com/raspberrypi/linux/issues/2094 !!
+    #elif RPI_VERSION == 1
+      static constexpr uint32_t PHYS_REG_BASE  = PI_01_REG_BASE;
+      static constexpr uint32_t CLOCK_HZ       = 250000000;
+      static constexpr uint32_t SPI_CLOCK_HZ   = 250000000;
+    #elif RPI_VERSION == 2 || RPI_VERSION == 3
+      static constexpr uint32_t PHYS_REG_BASE  = PI_23_REG_BASE;
+      static constexpr uint32_t CLOCK_HZ       = 250000000;
+      static constexpr uint32_t SPI_CLOCK_HZ   = 250000000;
+    #elif RPI_VERSION == 4
+      static constexpr uint32_t PHYS_REG_BASE  = PI_4_REG_BASE;
+      static constexpr uint32_t CLOCK_HZ	      = 375000000;
+      static constexpr uint32_t SPI_CLOCK_HZ   = 200000000;
+    #endif
+
+    namespace PIN
+    {
+      namespace AUX
+      {
+        namespace SPI1
+        {
+          constexpr int SCLK = 21;
+          constexpr int MOSI = 20;
+          constexpr int MISO = 19;
+          constexpr int CE0  = 18;
+          constexpr int CE1  = 17;
+          constexpr int CE2  = 16;
+        };
+      };
+
+      namespace PWM
+      {
+    
+      };
+
+      namespace SPI
+      {
+        constexpr int SCLK = 11;
+        constexpr int MOSI = 10;
+        constexpr int MISO = 9;
+        constexpr int CE0  = 8;
+        constexpr int CE1  = 7;
+      };
+    };
+  };
+
+  namespace AUX
+  {
+    constexpr int BASE     = RPI::PHYS_REG_BASE + 0x215000;
+    constexpr int ENABLES  = 0x4;
+
+    namespace SPI
+    {
+      constexpr int SPI0_BASE = 0x080;
+      constexpr int SPI1_BASE = 0x0C0;
+      constexpr int CNTL0_REG = 0x00;
+      constexpr int CNTL1_REG = 0x04;
+      constexpr int STAT_REG  = 0x08;
+      constexpr int IO_REG    = 0x10;
+      constexpr int PEEK_REG  = 0x14;
+    };
+  };
+
   namespace GPIO
   {
     enum class FUNC
@@ -484,41 +549,100 @@ namespace AP
       DOWN  = 1,
       UP    = 2
     };
-  }
+  };
+
+  namespace GPIO
+  {
+    constexpr uint32_t BASE       = RPI::PHYS_REG_BASE + 0x200000;
+    constexpr uint32_t GPFSEL0    = 0x00;
+    constexpr uint32_t GPSET0     = 0x1C;
+    constexpr uint32_t GPCLR0     = 0x28;
+    constexpr uint32_t GPLEV0     = 0x34;
+    constexpr uint32_t GPEDS0     = 0x40;
+    constexpr uint32_t GPREN0     = 0x4C;
+    constexpr uint32_t GPFEN0     = 0x58;
+    constexpr uint32_t GPHEN0     = 0x64;
+    constexpr uint32_t GPLEN0     = 0x70;
+    constexpr uint32_t GPPUD      = 0x94;
+    constexpr uint32_t GPPUDCLK0  = 0x98;
+  };
+
+  namespace PWM
+  {
+    enum class ALGO
+    {
+      BALANCED,
+      MARKSPACE
+    };
+
+    constexpr uint32_t CTL  = 0x00;
+    constexpr uint32_t STA  = 0x04;
+    constexpr uint32_t DMAC = 0x08;
+    constexpr uint32_t RNG1 = 0x10;
+    constexpr uint32_t DAT1 = 0x14;
+    constexpr uint32_t FIF1 = 0x18;
+    constexpr uint32_t RNG2 = 0x20;
+    constexpr uint32_t DAT2 = 0x24;
+  };
+
+  namespace SPI
+  {
+    constexpr uint32_t CS   = 0x00;
+    constexpr uint32_t FIFO = 0x04;
+    constexpr uint32_t CLK  = 0x08;
+    constexpr uint32_t DLEN = 0x0C;
+    constexpr uint32_t LTOH = 0x10;
+    constexpr uint32_t DC   = 0x14;
+  };
+
+  namespace CLOCKMANAGER
+  {
+    enum class MASH
+    {
+      INTEGER,
+      _1STAGE,
+      _2STAGE,
+      _3STAGE
+    };
+
+    /*
+      Clock Sources and their Frequencies
+      https://raspberrypi.stackexchange.com/questions/1153/what-are-the-different-clock-sources-for-the-general-purpose-clocks
+
+      0     0 Hz     Ground
+      1     19.2 MHz oscillator
+      2     0 Hz     testdebug0
+      3     0 Hz     testdebug1
+      4     0 Hz     PLLA
+      5     1000 MHz PLLC (changes with overclock settings)
+      6     500 MHz  PLLD
+      7     216 MHz  HDMI auxiliary
+      8-15  0 Hz     Ground
+    */
+    enum class SOURCE
+    {
+      GND,
+      OSCILLATOR,
+      TESTDEBUG0,
+      TESTDEBUG1,
+      PLLA,
+      PLLC,
+      PLLD,
+      HDMI,
+    };
+
+    constexpr uint32_t PASSWD   = 0x5a << 24;
+    constexpr uint32_t PCM_BASE = RPI::PHYS_REG_BASE + 0x101098;
+    constexpr uint32_t PWM_BASE = RPI::PHYS_REG_BASE + 0x1010a0;
+    constexpr uint32_t CTL      = 0x0;
+    constexpr uint32_t DIV      = 0x4;
+  };
 };
 
-   
 class AikaPi
 {
   private:
-    class RPI
-    {
-      public:
-        static constexpr uint32_t PI_01_REG_BASE = 0x20000000; // Pi Zero or 1 
-        static constexpr uint32_t PI_23_REG_BASE = 0x3F000000; // Pi 2 or 3
-        static constexpr uint32_t PI_4_REG_BASE  = 0xFE000000; // Pi 4
-
-        #if RPI_VERSION == 0
-          static constexpr uint32_t PHYS_REG_BASE  = PI_01_REG_BASE;
-          static constexpr uint32_t CLOCK_HZ	      = 250000000;
-          //static constexpr uint32_t SPI_CLOCK_HZ   = 400000000; // !! https://github.com/raspberrypi/linux/issues/2094 !!
-          static constexpr uint32_t SPI_CLOCK_HZ   = 250000000;  // !! https://github.com/raspberrypi/linux/issues/2094 !!
-        #elif RPI_VERSION == 1
-          static constexpr uint32_t PHYS_REG_BASE  = PI_01_REG_BASE;
-          static constexpr uint32_t CLOCK_HZ       = 250000000;
-          static constexpr uint32_t SPI_CLOCK_HZ   = 250000000;
-        #elif RPI_VERSION == 2 || RPI_VERSION == 3
-          static constexpr uint32_t PHYS_REG_BASE  = PI_23_REG_BASE;
-          static constexpr uint32_t CLOCK_HZ       = 250000000;
-          static constexpr uint32_t SPI_CLOCK_HZ   = 250000000;
-        #elif RPI_VERSION == 4
-          static constexpr uint32_t PHYS_REG_BASE  = PI_4_REG_BASE;
-          static constexpr uint32_t CLOCK_HZ	      = 375000000;
-          static constexpr uint32_t SPI_CLOCK_HZ   = 200000000;
-        #endif
-    };
-
-    class Mailbox
+        class Mailbox
     {
       // https://github.com/raspberrypi/firmware/wiki/Mailbox-property-interface
 
@@ -605,7 +729,7 @@ class AikaPi
                   void      reg       (uint32_t offset, uint32_t value);
                   uint32_t  reg_bits  (uint32_t offset, uint32_t shift, uint32_t mask = 0x1) const;
                   void      reg_bits  (uint32_t offset, uint32_t value, uint32_t shift, uint32_t mask = 0x1);
-                  
+
                   void*     bus       () const;
                   uint32_t  bus       (uint32_t offset) const;
                   void*     virt      () const;
@@ -616,20 +740,6 @@ class AikaPi
 
     class GPIO : public Peripheral 
     {
-      private:
-        static constexpr uint32_t BASE      = RPI::PHYS_REG_BASE + 0x200000;
-        static constexpr uint32_t GPFSEL0   = 0x00;
-        static constexpr uint32_t GPSET0    = 0x1C;
-        static constexpr uint32_t GPCLR0    = 0x28;
-        static constexpr uint32_t GPLEV0    = 0x34;
-        static constexpr uint32_t GPEDS0    = 0x40;
-        static constexpr uint32_t GPREN0    = 0x4C;
-        static constexpr uint32_t GPFEN0    = 0x58;
-        static constexpr uint32_t GPHEN0    = 0x64;
-        static constexpr uint32_t GPLEN0    = 0x70;
-        static constexpr uint32_t GPPUD     = 0x94;
-        static constexpr uint32_t GPPUDCLK0 = 0x98;
-
       public: 
         GPIO (void* phys_addr);
        ~GPIO ();
@@ -643,12 +753,16 @@ class AikaPi
 
     class SPI : public Peripheral
     {
+      private:
+        double m_frequency = 10'000'000.0;
+
       public:
         SPI (void* phys_addr);
        ~SPI ();
 
-        double  clock_rate (double frequency);
-        void    clear_fifo ();
+        void    init        ();  
+        double  frequency   (double value);
+        void    clear_fifo  ();
     };
 
     class DMA : public Peripheral 
@@ -683,30 +797,24 @@ class AikaPi
         PWM (void* phys_addr);
        ~PWM ();
 
-      void start     (unsigned channel);
-      void stop      (unsigned channel);
-      void algo      (unsigned channel, AP_PWM_ALGO algo);
-      void use_fifo  (unsigned channel, bool value);
+      void      init        ();
+      void      start       (unsigned channel);
+      void      stop        (unsigned channel);
+      void      algo        (unsigned channel, AP::PWM::ALGO algo);
+      void      use_fifo    (unsigned channel, bool value);
+      void      reset       ();
+      void      frequency   (bool channel, double value);
+      void      duty_cycle  (bool channel, double value);
+      uint32_t  range       (bool channel);
+      
     };
 
     class AUX : public Peripheral 
     { 
       private:
-        static constexpr uint32_t ENABLES = 0x4;
-
-      private:
         class SPI
         {
-          private: 
-            static constexpr uint32_t SPI0_BASE = 0x080;
-            static constexpr uint32_t SPI1_BASE = 0x0C0;
-            static constexpr uint32_t CNTL0_REG = 0x00;
-            static constexpr uint32_t CNTL1_REG = 0x04;
-            static constexpr uint32_t STAT_REG  = 0x08;
-            static constexpr uint32_t IO_REG    = 0x10;
-            static constexpr uint32_t PEEK_REG  = 0x14;
-          
-          private:
+           private:
             bool channel  = 0;
             AUX* aux      = nullptr;
 
@@ -736,9 +844,6 @@ class AikaPi
 
       private:
         std::array<SPI, 2> m_spi;
-        
-      public:
-        static constexpr uint32_t BASE = RPI::PHYS_REG_BASE + 0x215000;
       
       public:
         AUX (void* phys_addr);
@@ -747,6 +852,23 @@ class AikaPi
         SPI& spi                (bool channel);
         void master_enable_spi  (bool channel);
         void master_disable_spi (bool channel);
+    };
+
+    class ClockManager : public Peripheral
+    {
+      public:
+        ClockManager (void* phys_addr);
+
+        void stop         ();
+        void start        ();
+        bool is_running   ();
+        void source       (AP::CLOCKMANAGER::SOURCE source);
+        void mash         (AP::CLOCKMANAGER::MASH mash);
+        void divisor      (uint32_t integral, uint32_t fractional);
+        void frequency    (double value, 
+                            AP::CLOCKMANAGER::SOURCE source_val = AP::CLOCKMANAGER::SOURCE::PLLD, 
+                            AP::CLOCKMANAGER::MASH   mash_val   = AP::CLOCKMANAGER::MASH::_1STAGE);
+        double frequency  ();
     };
 
   public: 
@@ -774,12 +896,12 @@ class AikaPi
     bool m_is_pwm_init = false;
 
   public:
-    static SPI  spi;
-    static DMA  dma;
-    static PWM  pwm;
-    static GPIO gpio;
-    static AUX  aux;
-
+    static SPI          spi;
+    static DMA          dma;
+    static PWM          pwm;
+    static GPIO         gpio;
+    static AUX          aux;
+    static ClockManager cm_pwm;
 
     double m_pwm_range = 0.0;
 
@@ -925,7 +1047,7 @@ class AikaPi
     int     pwm_start             (unsigned channel);
     int     pwm_stop              (unsigned channel);
 
-    void    pwm_algo        (unsigned channel, AP_PWM_ALGO _AP_PWM_ALGO);
+    void    pwm_algo        (unsigned channel, AP::PWM::ALGO _AP_PWM_ALGO);
     double  pwm_frequency   (unsigned channel, double frequency);
     double  pwm_duty_cycle  (unsigned channel, double duty_cycle);
     
