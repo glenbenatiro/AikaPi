@@ -304,6 +304,7 @@ constexpr unsigned PAGE_SIZE = 0x1000;
 
 
 
+
 // --- PWM ---
 enum AP_PWM_ALGO
 {
@@ -460,9 +461,8 @@ class Utility
     static          void      write_reg_virt      (AP_MemoryMap& mem_map, uint32_t offset, uint32_t value, uint32_t mask, uint32_t shift);
     static          uint32_t  get_bits            (uint32_t input, uint32_t shift, uint32_t mask);  
 };
-    
 
-
+   
 class AikaPi
 {
   private:
@@ -547,13 +547,12 @@ class AikaPi
     class Peripheral
     {
       protected:
-        int   m_fd    = 0;
-        int   m_h     = 0;
-        int   m_size  = 0;
-
-        void* m_bus   = nullptr;
-        void* m_virt  = nullptr;
-        void* m_phys  = nullptr;
+        int   m_fd    = 0,
+              m_h     = 0,
+              m_size  = 0;
+        void *m_bus   = nullptr,
+             *m_virt  = nullptr,
+             *m_phys  = nullptr;
 
         static    uint32_t  page_roundup      (uint32_t addr);
         static    void*     map_phys_to_virt  (void* phys_addr, unsigned size);
@@ -561,12 +560,13 @@ class AikaPi
         static    void*     conv_bus_to_phys  (void* bus_addr);
         static    void      unmap_segment     (void* virt_addr, unsigned size);
 
+      
       public:
         Peripheral  (void* phys_addr);
         Peripheral  ();
        ~Peripheral  (); 
 
-        volatile  uint32_t* reg       (uint32_t offset) const;
+       volatile  uint32_t*  reg       (uint32_t offset) const;
                   void      reg       (uint32_t offset, uint32_t value);
                   uint32_t  reg_bits  (uint32_t offset, unsigned shift, uint32_t mask = 0x1) const;
                   void      reg_bits  (uint32_t offset, uint32_t value, unsigned shift, uint32_t mask = 0x1);
@@ -585,8 +585,6 @@ class AikaPi
        ~GPIO ();
     };
 
-
-  public:
     class SPI : public Peripheral
     {
       public:
@@ -635,6 +633,61 @@ class AikaPi
       void use_fifo  (unsigned channel, bool value);
     };
 
+    class AUX : public Peripheral 
+    { 
+      private:
+        class SPI
+        {
+          private: 
+            static constexpr uint32_t SPI0_BASE = 0x080;
+            static constexpr uint32_t SPI1_BASE = 0x0C0;
+            static constexpr uint32_t CNTL0_REG = 0x00;
+            static constexpr uint32_t CNTL1_REG = 0x04;
+            static constexpr uint32_t STAT_REG  = 0x08;
+            static constexpr uint32_t IO_REG    = 0x10;
+            static constexpr uint32_t PEEK_REG  = 0x14;
+            
+            bool channel  = 0;
+            AUX* aux      = nullptr;
+
+            uint32_t off (uint32_t offset) const;
+          
+          public:
+            SPI (bool channel, AUX* aux);
+
+            bool is_rx_fifo_empty       () const;
+            void enable                 ();
+            void disable                ();
+            void shift_length           (uint8_t value);
+            void shift_out_ms_bit_first (bool value);
+            void mode                   (unsigned mode);
+            void clock_polarity         (bool value);
+            void in_rising              (bool value);
+            void out_rising             (bool balue);
+            void chip_selects           (uint8_t value);
+            void frequency              (double value);
+            void clear_fifos            ();
+            void xfer                   (char* rxd, char* txd, unsigned length);
+            void read                   (char* rxd, unsigned length);
+            void write                  (char* txd, unsigned length);
+        };
+
+        std::array<SPI, 2> m_spi;
+        
+      public:
+        static constexpr uint32_t BASE = RPI::PHYS_REG_BASE + 0x215000;
+
+        AUX (void* phys_addr);
+
+        void init ();
+
+        SPI& spi (bool channel)
+        {
+          return (m_spi[channel]);
+        }
+    };
+
+  public: 
     class Uncached : public Peripheral
     {
       public: 
@@ -645,26 +698,6 @@ class AikaPi
       void*    map_uncached_mem  (unsigned size);
       uint32_t bus               (void* offset) const volatile;
       uint32_t bus               (volatile void* offset) const volatile;
-    };
-
-    class AUX : public Peripheral 
-    { 
-      public:
-        static constexpr uint32_t BASE = RPI::PHYS_REG_BASE + 0x215000;
-
-        class SPI : public Peripheral
-        {
-          public:
-            SPI (void* phys_addr);
-
-            void xfer       (char* rxd, char* txd, unsigned length);
-            void frequency  (double value);
-        };
-          
-      public:
-        std::array<SPI, 2> spi;
-
-        AUX (void* phys_addr);
     };
 
   private: 

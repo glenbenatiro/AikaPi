@@ -17,7 +17,7 @@ AikaPi::SPI  AikaPi::spi  (reinterpret_cast<void*>(SPI0_BASE));
 AikaPi::DMA  AikaPi::dma  (reinterpret_cast<void*>(DMA_BASE));
 AikaPi::PWM  AikaPi::pwm  (reinterpret_cast<void*>(PWM_BASE));
 AikaPi::GPIO AikaPi::gpio (reinterpret_cast<void*>(GPIO_BASE));
-AikaPi::AUX  AikaPi::aux (reinterpret_cast<void*>(AikaPi::AUX::BASE));
+AikaPi::AUX  AikaPi::aux  (reinterpret_cast<void*>(AikaPi::AUX::BASE));
 
 // --- Utility Class ---
 
@@ -853,30 +853,198 @@ AikaPi::GPIO::
 
 }
 
-AikaPi::AUX:: 
-AUX (void* phys_addr) : Peripheral (phys_addr),
-  spi {SPI (0), SPI (0)}
+AikaPi::AUX::SPI:: 
+SPI (bool channel, AUX* aux)
+  : channel (channel), aux (aux)
 {
 
 }
 
-AikaPi::AUX::SPI::
-SPI (void* phys_addr) : Peripheral (phys_addr)
+/**
+ * @brief Return a uint32_t offset of the specific 
+ *        AUX SPI channel's SPI register
+ */
+uint32_t AikaPi::AUX::SPI:: 
+off (uint32_t offset) const
 {
+  uint32_t chan_offset = offset + (channel ? SPI1_BASE : SPI0_BASE);
 
+  return (chan_offset);
 }
 
-void AikaPi::AUX::SPI::
-xfer (char*    rxd, 
-      char*    txd, 
-      unsigned length)
+bool AikaPi::AUX::SPI:: 
+is_rx_fifo_empty () const
 {
-
+  return (aux->reg_bits (off (STAT_REG), 2));
 }
 
-void AikaPi::AUX::SPI::
+void AikaPi::AUX::SPI:: 
+enable ()
+{
+  aux->reg_bits (off (CNTL0_REG), 1, 11);
+}
+
+void AikaPi::AUX::SPI:: 
+disable ()
+{
+  aux->reg_bits (off (CNTL0_REG), 0, 11);
+}
+
+void AikaPi::AUX::SPI:: 
+shift_length (uint8_t value)
+{
+  aux->reg_bits (off (CNTL0_REG), value, 0, 6);
+}
+
+void AikaPi::AUX::SPI:: 
+shift_out_ms_bit_first (bool value)
+{
+  aux->reg_bits (off (CNTL0_REG), value, 6);
+}
+
+void AikaPi::AUX::SPI:: 
+mode (unsigned mode)
+{
+  switch (mode)
+  {
+    // https://www.analog.com/en/analog-dialogue/articles/introduction-to-spi-interface.html
+
+    case 0:
+    {
+      clock_polarity  (0);
+      in_rising       (1);
+      out_rising      (0);
+    }
+
+    case 1:
+    {
+      clock_polarity  (0);
+      in_rising       (0);
+      out_rising      (1);
+    }
+    
+    case 2:
+    {
+      clock_polarity  (1);
+      in_rising       (1);
+      out_rising      (0);
+    }
+
+    case 3:
+    { 
+      clock_polarity  (1);
+      in_rising       (0);
+      out_rising      (1);
+    }
+
+    default:
+    {
+      throw (std::runtime_error ("Invalid SPI mode."));
+    }
+  }
+}
+
+void AikaPi::AUX::SPI:: 
+clock_polarity (bool value)
+{
+  aux->reg_bits (off (CNTL0_REG), value, 7);
+}
+
+void AikaPi::AUX::SPI:: 
+in_rising (bool value)
+{
+  aux->reg_bits (off (CNTL0_REG), value, 10);
+}
+
+void AikaPi::AUX::SPI:: 
+out_rising (bool value)
+{
+  aux->reg_bits (off (CNTL0_REG), value, 8);
+}
+
+void AikaPi::AUX::SPI:: 
+chip_selects (uint8_t value)
+{
+  aux->reg_bits (off (CNTL0_REG), value, 17, 3);
+}
+
+void AikaPi::AUX::SPI:: 
 frequency (double value)
 {
+  uint16_t divider = static_cast<uint16_t>((static_cast<double>(RPI::CLOCK_HZ) /
+    (2.0 * value)) - 1) & 0x0fff;
+
+  aux->reg_bits (off (CNTL0_REG), divider, 20, 12);
+}
+
+void AikaPi::AUX::SPI:: 
+clear_fifos ()
+{
+  aux->reg_bits (off (CNTL0_REG), 1, 9);
+
+  // small delay?
+  std::this_thread::sleep_for (std::chrono::duration <double, std::micro> (100));
+
+  aux->reg_bits (off (CNTL0_REG), 0, 9);
+}
+
+void AikaPi::AUX::SPI:: 
+xfer (char*     rxd, 
+      char*     txd, 
+      unsigned  length)
+{
+  std::cout << "rxd: " << rxd << "\n";
+  std::cout << "txd: " << txd << "\n";
+  std::cout << "len: " << length << "\n";
+
+  while (length--)
+  {
+    // assert CE pin ?
+
+    uint32_t txdata = *(txd++);
+
+    // write
+    aux->reg (off (IO_REG), txdata);
+
+    // wait until 1 byte is received
+    while (is_rx_fifo_empty ());
+
+    *(rxd++) = *(aux->reg (off (IO_REG)));
+
+    // deassert CE pin ?
+  }
+}
+
+void AikaPi::AUX::SPI:: 
+read (char*    rxd, 
+      unsigned length)
+{
+  char txd[length] = {0};
+
+  xfer (rxd, txd, length);
+}
+
+void AikaPi::AUX::SPI:: 
+write (char*    txd, 
+       unsigned length)
+{
+  char rxd[length] = {0};
+
+  xfer (rxd, txd, length);
+} 
+
+AikaPi::AUX::
+AUX (void* phys_addr) : Peripheral (phys_addr),
+  m_spi {SPI (0, this), SPI (1, this)}
+{
+
+}
+
+void AikaPi::AUX::
+init ()
+{
+  // init SPI0 and SPI1
+
 
 }
 
