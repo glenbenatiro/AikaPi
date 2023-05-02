@@ -464,21 +464,21 @@ namespace AP
 
     #if RPI_VERSION == 0
       static constexpr uint32_t PHYS_REG_BASE  = PI_01_REG_BASE;
-      static constexpr uint32_t CLOCK_HZ	      = 250000000;
-      //static constexpr uint32_t SPI_CLOCK_HZ   = 400000000; // !! https://github.com/raspberrypi/linux/issues/2094 !!
-      static constexpr uint32_t SPI_CLOCK_HZ   = 250000000;  // !! https://github.com/raspberrypi/linux/issues/2094 !!
+      static constexpr double CLOCK_HZ	      = 250000000.0;
+      //static constexpr double SPI_CLOCK_HZ   = 400000000.0; // !! https://github.com/raspberrypi/linux/issues/2094 !!
+      static constexpr double SPI_CLOCK_HZ   = 250000000.0;  // !! https://github.com/raspberrypi/linux/issues/2094 !!
     #elif RPI_VERSION == 1
       static constexpr uint32_t PHYS_REG_BASE  = PI_01_REG_BASE;
-      static constexpr uint32_t CLOCK_HZ       = 250000000;
-      static constexpr uint32_t SPI_CLOCK_HZ   = 250000000;
+      static constexpr double CLOCK_HZ       = 250000000.0;
+      static constexpr double SPI_CLOCK_HZ   = 250000000.0;
     #elif RPI_VERSION == 2 || RPI_VERSION == 3
       static constexpr uint32_t PHYS_REG_BASE  = PI_23_REG_BASE;
-      static constexpr uint32_t CLOCK_HZ       = 250000000;
-      static constexpr uint32_t SPI_CLOCK_HZ   = 250000000;
+      static constexpr double CLOCK_HZ       = 250000000.0;
+      static constexpr double SPI_CLOCK_HZ   = 250000000.0;
     #elif RPI_VERSION == 4
       static constexpr uint32_t PHYS_REG_BASE  = PI_4_REG_BASE;
-      static constexpr uint32_t CLOCK_HZ	      = 375000000;
-      static constexpr uint32_t SPI_CLOCK_HZ   = 200000000;
+      static constexpr double CLOCK_HZ	      = 375000000.0;
+      static constexpr double SPI_CLOCK_HZ   = 200000000.0;
     #endif
 
     namespace PIN
@@ -576,8 +576,8 @@ namespace AP
   {
     enum class ALGO
     {
-      BALANCED,
-      MARKSPACE
+      BALANCED  = 0,
+      MARKSPACE = 1
     };
 
     constexpr uint32_t BASE = RPI::PHYS_REG_BASE + 0x20C000;
@@ -634,21 +634,21 @@ namespace AP
     */
     enum class SOURCE
     {
-      GND,
-      OSCILLATOR,
-      TESTDEBUG0,
-      TESTDEBUG1,
-      PLLA,
-      PLLC,
-      PLLD,
-      HDMI,
+      GND         = 0,
+      OSCILLATOR  = 19'200'000,
+      TESTDEBUG0  = 0,
+      TESTDEBUG1  = 0,
+      PLLA        = 0,
+      PLLC        = 1'000'000'000, // changes with overclock settings
+      PLLD        = 500'000'000,
+      HDMI        = 216'000'000
     };
 
     constexpr uint32_t BASE     = RPI::PHYS_REG_BASE + 0x101000;
-    constexpr uint32_t CTL_PWM  = 0x98;
-    constexpr uint32_t CTL_PCM  = 0xA0;
-    constexpr uint32_t DIV_PWM  = 0xA4;
-    constexpr uint32_t DIV_PCM  = 0x9C;
+    constexpr uint32_t PWM_CTL  = 0x98;
+    constexpr uint32_t PCM_CTL  = 0xA0;
+    constexpr uint32_t PWM_DIV  = 0xA4;
+    constexpr uint32_t PCM_DIV  = 0x9C;
     constexpr uint32_t PASSWD   = 0x5a << 24;
     constexpr uint32_t CTL      = 0x98;
     constexpr uint32_t DIV      = 0xA4;
@@ -731,27 +731,30 @@ class AikaPi
         Peripheral ();
        ~Peripheral (); 
 
-                  uint32_t  rreg      (uint32_t* reg) const;
-                  void      wreg      (uint32_t* reg, uint32_t value);
-                  uint32_t  rbits     (uint32_t* reg, uint32_t shift, uint32_t mask = 0x1) const;
-                  void      wbits     (uint32_t* reg, uint32_t value, uint32_t shift, uint32_t mask = 0x1);
+        static constexpr uint32_t  wbits     (uint32_t data, uint32_t value, uint32_t shift, uint32_t mask = 0x1);
 
-                  uint32_t  rreg      (volatile uint32_t* reg) const;
-                  void      wreg      (volatile uint32_t* reg, uint32_t value);
-                  uint32_t  rbits     (volatile uint32_t* reg, uint32_t shift, uint32_t mask = 0x1) const;
-                  void      wbits     (volatile uint32_t* reg, uint32_t value, uint32_t shift, uint32_t mask = 0x1);
+        static           uint32_t  rreg      (uint32_t* reg);
+        static           void      wreg      (uint32_t* reg, uint32_t value);
+        static           uint32_t  rbits     (uint32_t* reg, uint32_t shift, uint32_t mask = 0x1);
+        static           void      wbits     (uint32_t* reg, uint32_t value, uint32_t shift, uint32_t mask = 0x1);
 
-        volatile  uint32_t* reg       (uint32_t offset) const;
-                  void      reg       (uint32_t offset, uint32_t value);
-                  uint32_t  reg_bits  (uint32_t offset, uint32_t shift, uint32_t mask = 0x1) const;
-                  void      reg_bits  (uint32_t offset, uint32_t value, uint32_t shift, uint32_t mask = 0x1);
+        static           uint32_t  rreg      (volatile uint32_t* reg);
+        static           void      wreg      (volatile uint32_t* reg, uint32_t value);
+        static           uint32_t  rbits     (volatile uint32_t* reg, uint32_t shift, uint32_t mask = 0x1);
+        static           void      wbits     (volatile uint32_t* reg, uint32_t value, uint32_t shift, uint32_t mask = 0x1);
 
-                  void*     bus       () const;
-                  uint32_t  bus       (uint32_t offset) const;
-                  void*     virt      () const;
-                  void*     phys      () const;
-                  void      disp_reg  (uint32_t offet) const;
-        static    void      print_u32 (uint32_t value);
+        volatile         uint32_t* reg       (uint32_t offset) const;
+                         void      reg       (uint32_t offset, uint32_t value);
+                         uint32_t  reg_rbits (uint32_t offset, uint32_t shift, uint32_t mask = 0x1) const;
+                         void      reg_wbits (uint32_t offset, uint32_t value, uint32_t shift, uint32_t mask = 0x1);
+
+                         void*     bus       () const;
+                         uint32_t  bus       (uint32_t offset) const;
+                         void*     virt      () const;
+                         void*     phys      () const;
+
+                         void      disp_reg  (uint32_t offet) const;
+        static           void      print_u32 (uint32_t value);
     }; 
 
     class GPIO : public Peripheral 
@@ -776,7 +779,6 @@ class AikaPi
         SPI (void* phys_addr);
        ~SPI ();
 
-        void    init        ();  
         double  frequency   (double value);
         void    clear_fifo  ();
     };
@@ -792,8 +794,8 @@ class AikaPi
 
       volatile uint32_t* reg        (unsigned dma_chan, uint32_t offset) const;
                void      reg        (unsigned dma_chan, uint32_t offset, uint32_t value);
-               uint32_t  reg_bits   (unsigned dma_chan, uint32_t offset, unsigned shift, uint32_t mask = 0x1) const;
-               void      reg_bits   (unsigned dma_chan, uint32_t offset, unsigned value, unsigned shift, uint32_t mask = 0x1);
+               uint32_t  reg_rbits  (unsigned dma_chan, uint32_t offset, unsigned shift, uint32_t mask = 0x1) const;
+               void      reg_wbits  (unsigned dma_chan, uint32_t offset, unsigned value, unsigned shift, uint32_t mask = 0x1);
                void      disp_reg   (unsigned dma_chan, uint32_t offset) const;      
                uint32_t  dest_ad    (unsigned dma_chan);
                void      start      (unsigned dma_chan, uint32_t start_cb_bus_addr);
@@ -883,16 +885,18 @@ class AikaPi
           public:
             ClkManPeriph (void* phys_addr);
 
-            void stop         ();
-            void start        ();
-            bool is_running   ();
-            void source       (AP::CLKMAN::SOURCE source);
-            void mash         (AP::CLKMAN::MASH mash);
-            void divisor      (uint32_t integral, uint32_t fractional);
-            void frequency    (double value, 
-                                AP::CLKMAN::SOURCE source_val = AP::CLKMAN::SOURCE::PLLD, 
-                                AP::CLKMAN::MASH   mash_val   = AP::CLKMAN::MASH::_1STAGE);
-            double frequency  ();
+            void stop                 ();
+            void start                ();
+            bool is_running           ();
+            void source               (AP::CLKMAN::SOURCE source);
+            void mash                 (AP::CLKMAN::MASH mash);
+            void divisor              (uint32_t integral, uint32_t fractional);
+            void frequency            (double value, 
+                                        AP::CLKMAN::SOURCE source_val = AP::CLKMAN::SOURCE::PLLD, 
+                                        AP::CLKMAN::MASH   mash_val   = AP::CLKMAN::MASH::_1STAGE);
+            double frequency          ();
+
+            AP::CLKMAN::SOURCE source ();
         };
 
         class PCM : public ClkManPeriph
