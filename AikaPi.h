@@ -1,7 +1,7 @@
 #ifndef AIKAPI_H
 #define AIKAPI_H
 
-#include <mutex>
+#include <cstdint>
 
 // Link to the BCM2385 datasheet:
 // // https://www.raspberrypi.org/app/uploads/2012/02/BCM2835-ARM-Peripherals.pdf
@@ -413,7 +413,6 @@ typedef struct
   int       mode;
   int       gpio;
   uint32_t  baud;
-  std::mutex mutex;
 
   union 
   {
@@ -442,10 +441,10 @@ typedef struct
 class Utility 
 {
   public:
-    static volatile uint32_t* reg            (const AP_MemoryMap& mem_map, uint32_t offset);
-    static          uint32_t  bus             (const AP_MemoryMap& mem_map, uint32_t offset);
-    static          uint32_t  bus    (const AP_MemoryMap& mem_map, void*    offset);  
-    static          uint32_t  bus    (const AP_MemoryMap& mem_map, volatile void* offset);  
+    static volatile uint32_t* reg                 (const AP_MemoryMap& mem_map, uint32_t offset);
+    static          uint32_t  bus                 (const AP_MemoryMap& mem_map, uint32_t offset);
+    static          uint32_t  bus                 (const AP_MemoryMap& mem_map, void*    offset);  
+    static          uint32_t  bus                 (const AP_MemoryMap& mem_map, volatile void* offset);  
     static          uint32_t  dma_chan_reg_offset (uint32_t dma_channel,  uint32_t dma_offset);
     static          void      disp_reg_virt       (const AP_MemoryMap& mem_map, uint32_t offset);
     static          void      disp_bit32          (uint32_t bits);
@@ -487,45 +486,46 @@ namespace AP
       {
         namespace SPI1
         {
-          constexpr int SCLK = 21;
-          constexpr int MOSI = 20;
-          constexpr int MISO = 19;
-          constexpr int CE0  = 18;
-          constexpr int CE1  = 17;
-          constexpr int CE2  = 16;
+          constexpr unsigned SCLK = 21;
+          constexpr unsigned MOSI = 20;
+          constexpr unsigned MISO = 19;
+          constexpr unsigned CE0  = 18;
+          constexpr unsigned CE1  = 17;
+          constexpr unsigned CE2  = 16;
         };
       };
 
       namespace PWM
       {
-    
+        constexpr unsigned _0 = 12;
+        constexpr unsigned _1 = 19;
       };
 
       namespace SPI
       {
-        constexpr int SCLK = 11;
-        constexpr int MOSI = 10;
-        constexpr int MISO = 9;
-        constexpr int CE0  = 8;
-        constexpr int CE1  = 7;
+        constexpr unsigned SCLK = 11;
+        constexpr unsigned MOSI = 10;
+        constexpr unsigned MISO = 9;
+        constexpr unsigned CE0  = 8;
+        constexpr unsigned CE1  = 7;
       };
     };
   };
 
   namespace AUX
   {
-    constexpr int BASE     = RPI::PHYS_REG_BASE + 0x215000;
-    constexpr int ENABLES  = 0x4;
+    constexpr uint32_t BASE     = RPI::PHYS_REG_BASE + 0x215000;
+    constexpr uint32_t ENABLES  = 0x4;
 
     namespace SPI
     {
-      constexpr int SPI0_BASE = 0x080;
-      constexpr int SPI1_BASE = 0x0C0;
-      constexpr int CNTL0_REG = 0x00;
-      constexpr int CNTL1_REG = 0x04;
-      constexpr int STAT_REG  = 0x08;
-      constexpr int IO_REG    = 0x10;
-      constexpr int PEEK_REG  = 0x14;
+      constexpr uint32_t SPI0_BASE = 0x080;
+      constexpr uint32_t SPI1_BASE = 0x0C0;
+      constexpr uint32_t CNTL0_REG = 0x00;
+      constexpr uint32_t CNTL1_REG = 0x04;
+      constexpr uint32_t STAT_REG  = 0x08;
+      constexpr uint32_t IO_REG    = 0x10;
+      constexpr uint32_t PEEK_REG  = 0x14;
     };
   };
 
@@ -553,7 +553,74 @@ namespace AP
 
   namespace DMA
   {
-    constexpr uint32_t BASE = RPI::PHYS_REG_BASE + 0x007000;
+    struct CTL_BLK
+    {
+      uint32_t  ti,
+                source_ad,
+                dest_ad,
+                txfr_len,
+                stride,
+                nextconbk,
+                debug,
+                unused;
+    } __attribute__ (( aligned(32) ));
+
+  
+    enum class PERIPH_DREQ
+    {
+      NONE          = 0,
+      DSI           = 1,
+      PCM_TX        = 2,
+      PCM_RX        = 3,
+      SMI           = 4,
+      PWM           = 5,
+      SPI_TX        = 6,
+      SPI_RX        = 7,
+      BSC_TX        = 8,
+      BSC_RX        = 9,
+   // unused        = 10,
+      EMMC          = 11,
+      UART_TX       = 12,
+      SD_HOST       = 13,
+      UART_RX       = 14,
+   // DSI           = 15,
+      SLIMBUS_MCTX  = 16,
+      HDMI          = 17,
+      SLIMBUX_MCRX  = 18,
+      SLIMBUS_DC0   = 19,
+      SLIMBUS_DC1   = 20,
+      SLIMBUS_DC2   = 21,
+      SLIMBUS_DC3   = 22,
+      SLIMBUS_DC4   = 23,
+      SCALER_FIFO_0 = 24,
+      SCALER_FIFO_1 = 25,
+      SCALER_FIFO_2 = 26,
+      SLIMBUS_DC5   = 27,
+      SLIMBUS_DC6   = 28,
+      SLIMBUS_DC7   = 29,
+      SLIMBUS_DC8   = 30,
+      SLIMBUS_DC9   = 31
+    };
+
+    namespace TI_DATA
+    {
+      inline constexpr uint32_t PERMAP (PERIPH_DREQ periph) {return ((static_cast<uint32_t>(periph)) << 16);}
+             constexpr uint32_t DEST_DREQ = 1 << 6;
+             constexpr uint32_t WAIT_RESP = 1 << 3;
+    };
+
+    constexpr uint32_t BASE       = RPI::PHYS_REG_BASE + 0x007000;
+    constexpr uint32_t CS         = 0x00;
+    constexpr uint32_t CONBLK_AD  = 0x04;
+    constexpr uint32_t TI         = 0x08;
+    constexpr uint32_t SOURCE_AD  = 0x0C;
+    constexpr uint32_t DEST_AD    = 0x10;
+    constexpr uint32_t TXFR_LEN   = 0x14;
+    constexpr uint32_t STRIDE     = 0x18;
+    constexpr uint32_t NEXTCONBK  = 0x1C;
+    constexpr uint32_t DEBUG      = 0x20;
+
+    constexpr unsigned CHAN_COUNT = 16;
   };
 
   namespace GPIO
@@ -613,9 +680,9 @@ namespace AP
     enum class MASH
     {
       INTEGER,
-      _1STAGE,
-      _2STAGE,
-      _3STAGE
+      ONE_STAGE,
+      TWO_STAGE,
+      THREE_STAGE
     };
 
     /*
@@ -634,24 +701,37 @@ namespace AP
     */
     enum class SOURCE
     {
-      GND         = 0,
-      OSCILLATOR  = 19'200'000,
-      TESTDEBUG0  = 0,
-      TESTDEBUG1  = 0,
-      PLLA        = 0,
-      PLLC        = 1'000'000'000, // changes with overclock settings
-      PLLD        = 500'000'000,
-      HDMI        = 216'000'000
+      GND,
+      OSCILLATOR,
+      TESTDEBUG0,
+      TESTDEBUG1,
+      PLLA,
+      PLLC,
+      PLLD,
+      HDMI
     };
 
-    constexpr uint32_t BASE     = RPI::PHYS_REG_BASE + 0x101000;
-    constexpr uint32_t PWM_CTL  = 0x98;
-    constexpr uint32_t PCM_CTL  = 0xA0;
-    constexpr uint32_t PWM_DIV  = 0xA4;
-    constexpr uint32_t PCM_DIV  = 0x9C;
-    constexpr uint32_t PASSWD   = 0x5a << 24;
-    constexpr uint32_t CTL      = 0x98;
-    constexpr uint32_t DIV      = 0xA4;
+    static unsigned SOURCE_FREQUENCY [] = 
+    {
+      0,
+      19'200'000,
+      0,
+      0,
+      0,
+      1'000'000'000,
+      500'000'000,
+      216'000'000,
+  };
+
+    constexpr uint32_t BASE      = RPI::PHYS_REG_BASE + 0x101000;
+    constexpr uint32_t PWM_CTL   = 0x98;
+    constexpr uint32_t PCM_CTL   = 0xA0;
+    constexpr uint32_t PWM_DIV   = 0xA4;
+    constexpr uint32_t PCM_DIV   = 0x9C;
+    constexpr uint32_t PASSWD    = 0x5a << 24;
+    constexpr uint32_t CTL       = 0x98;
+    constexpr uint32_t DIV       = 0xA4;
+    constexpr double   FREQUENCY = 100'000'000.0;
   };
 };
 
@@ -788,6 +868,9 @@ class AikaPi
       private:
         uint32_t dma_chan_reg_offset (unsigned chan, uint32_t offset) const;
 
+      protected:
+        void init ();
+
       public:
         DMA (void* phys_addr);
        ~DMA ();
@@ -811,20 +894,29 @@ class AikaPi
     
     class PWM : public Peripheral 
     {
+      protected:
+        double m_duty_cycle = 50.0;
+
+      protected:
+        void init ();       
+
       public:
         PWM (void* phys_addr);
        ~PWM ();
-
-      void      init        ();
-      void      start       (unsigned channel);
-      void      stop        (unsigned channel);
-      void      algo        (unsigned channel, AP::PWM::ALGO algo);
-      void      use_fifo    (unsigned channel, bool value);
-      void      reset       ();
-      void      frequency   (bool channel, double value);
-      void      duty_cycle  (bool channel, double value);
-      uint32_t  range       (bool channel);
       
+      void      start            (bool channel);
+      void      stop             (bool channel);
+      void      algo             (bool channel, AP::PWM::ALGO algo);
+      void      use_fifo         (bool channel, bool value);
+      void      reset            ();
+      double    frequency        (bool channel, double value);
+      void      duty_cycle       (bool channel, double value);
+      uint32_t  range            (bool channel);
+      bool      is_using_fifo    (bool channel);
+      void      repeat_last_data (bool channel, bool value);
+      void      clear_fifo       ();
+      bool      is_fifo_empty    () const;
+      bool      is_fifo_full     () const;
     };
 
     class AUX : public Peripheral 
@@ -861,7 +953,8 @@ class AikaPi
         };
 
       private:
-        std::array<SPI, 2> m_spi;
+        //std::array<SPI, 2> m_spi;
+        SPI m_spi[2];
       
       public:
         AUX (void* phys_addr);
@@ -893,7 +986,7 @@ class AikaPi
             void divisor              (uint32_t integral, uint32_t fractional);
             void frequency            (double value, 
                                         AP::CLKMAN::SOURCE source_val = AP::CLKMAN::SOURCE::PLLD, 
-                                        AP::CLKMAN::MASH   mash_val   = AP::CLKMAN::MASH::_1STAGE);
+                                        AP::CLKMAN::MASH   mash_val   = AP::CLKMAN::MASH::ONE_STAGE);
             double frequency          ();
 
             AP::CLKMAN::SOURCE source ();

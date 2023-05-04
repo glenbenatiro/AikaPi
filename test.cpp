@@ -1,31 +1,99 @@
 #include <iostream>
+#include <thread>
+#include <cstring>
 
 #include "AikaPi.h"
 
 // compile with
 // g++ -o test test.cpp AikaPi.cpp
 
-constexpr int PWM0_PIN = 12;
-constexpr int PWM_CHAN = 1;
-constexpr double LAB_PWM_FREQUENCY = 20'000'000.0;
-constexpr double LAB_OSCILLOSCOPE::MAX_SAMPLING_RATE = 200'000;
+struct DMA_Info
+{
+  AP::DMA::CTL_BLK cb [5];
+
+  uint32_t pwm_fif1_data;
+};
 
 int main ()
 {
-  AikaPi _AikaPi;
+  AikaPi AP;
+  int count = 0;
+  
+  AP.gpio.set (AP::RPI::PIN::PWM::_0, AP::GPIO::FUNC::ALT0, AP::GPIO::PULL::DOWN, 0);
+  AP.gpio.set (AP::RPI::PIN::PWM::_1, AP::GPIO::FUNC::ALT5, AP::GPIO::PULL::DOWN, 0);
 
-  _AikaPi.gpio_set (PWM0_PIN, AP_GPIO_FUNC_OUTPUT, GPIO_PULL_DOWN);
+  // chan 1
+  AP.pwm.frequency        (1, 100000.0);
+  AP.pwm.use_fifo         (1, false);
+  AP.pwm.repeat_last_data (1, false);
+  
+  // chan 0
+  AP.pwm.frequency        (0, 100000.0);
+  AP.pwm.use_fifo         (0, true);
+  AP.pwm.repeat_last_data (0, false);
 
-  uint32_t m_pwm_range       = (LAB_PWM_FREQUENCY * 2) / LAB_OSCILLOSCOPE::MAX_SAMPLING_RATE;
+  AP.pwm.clear_fifo ();
 
-  _AikaPi.pwm_mode              (PWM_CHAN, PWM_CHANNEL_MODE_PWM);
-  _AikaPi.pwm_use_fifo          (PWM_CHAN, true);
-  _AikaPi.pwm_repeat_last_data  (PWM_CHAN, true);
-  _AikaPi.pwm_range             (PWM_CHAN, m_pwm_range);
-  _AikaPi.pwm_fifo              (2);
-  _AikaPi.pwm_enable            (PWM_CHAN, true);
+  // create uncached memory
+  AikaPi::Uncached uncached;
+  uncached.map_uncached_mem (10000);
 
-  while (true);
+  // store dma_info
+  DMA_Info& info = *(static_cast<DMA_Info*>(uncached.virt ()));
+
+  uint32_t flag = AP::DMA::TI_DATA::PERMAP (AP::DMA::PERIPH_DREQ::PWM) |
+                  AP::DMA::TI_DATA::DEST_DREQ |
+                  AP::DMA::TI_DATA::WAIT_RESP;
+
+  DMA_Info dma_info = 
+  {
+    .cb = 
+    {
+      {
+        flag,
+        uncached.bus  (&info.pwm_fif1_data),
+        AP.pwm.bus    (AP::PWM::FIF1),
+        4,
+        0,
+        uncached.bus  (&info.cb[1]),
+        0
+      },
+      {
+        flag,
+        uncached.bus  (&info.pwm_fif1_data),
+        AP.pwm.bus    (AP::PWM::FIF1),
+        4,
+        0,
+        uncached.bus  (&info.cb[0]),
+        0
+      }
+    },
+
+    .pwm_fif1_data = 0xFA
+  };
+
+  std::memcpy (&info, &dma_info, sizeof (dma_info));
+  
+  AP.pwm.reg (AP::PWM::DMAC, (1 << 31) | (8 << 8) | (1 << 0));
+  AP.dma.start (7, uncached.bus (&info.cb[0]));
+
+  AP.pwm.start (0);
+  AP.pwm.start (1);
+
+  std::cout << std::hex << "cb[0] bus addr: " << uncached.bus (&info.cb[0]) << "\n";
+
+  while (true)
+  {
+    std::this_thread::sleep_for (std::chrono::seconds (1));
+
+    info.pwm_fif1_data = AP.pwm.range (0) / 2;
+
+    std::this_thread::sleep_for (std::chrono::seconds (1));
+
+    info.pwm_fif1_data = AP.pwm.range (0) / 4;
+
+    // std::cout << std::hex << *(AP.dma.reg (7, AP::DMA::CONBLK_AD)) << "\n";
+  }
 
   return 0;
 }

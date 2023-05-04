@@ -16,12 +16,12 @@
 #include <sys/stat.h>
 #include <sys/ioctl.h>
 
+AikaPi::ClockManager  AikaPi::cm    (reinterpret_cast<void*>(AP::CLKMAN::BASE)); // cm should come before pwm!
 AikaPi::SPI           AikaPi::spi   (reinterpret_cast<void*>(AP::SPI::BASE));
 AikaPi::DMA           AikaPi::dma   (reinterpret_cast<void*>(AP::DMA::BASE));
 AikaPi::PWM           AikaPi::pwm   (reinterpret_cast<void*>(AP::PWM::BASE));
 AikaPi::GPIO          AikaPi::gpio  (reinterpret_cast<void*>(AP::GPIO::BASE));
 AikaPi::AUX           AikaPi::aux   (reinterpret_cast<void*>(AP::AUX::BASE));
-AikaPi::ClockManager  AikaPi::cm    (reinterpret_cast<void*>(AP::CLKMAN::BASE));
 
 // --- Utility Class ---
 /**
@@ -418,16 +418,12 @@ map_phys_to_virt (void*     phys_addr,
 void AikaPi::Peripheral:: 
 map_addresses (void* phys_addr)
 {
-  std::cout << "mapping: " << phys_addr << "\n";
-
   m_phys  = phys_addr;
   m_size  = page_roundup (PAGE_SIZE);
   m_bus   = reinterpret_cast<uint8_t*>(phys_addr) - 
             reinterpret_cast<uint8_t*>(PHYS_REG_BASE) + 
             reinterpret_cast<uint8_t*>(BUS_REG_BASE);
   m_virt  = map_phys_to_virt (phys_addr, m_size);
-
-  std::cout << "ok!\n";
 }
 
 void* AikaPi::Peripheral::
@@ -468,18 +464,18 @@ wreg (uint32_t* reg, uint32_t value)
 }
 
 uint32_t AikaPi::Peripheral::
-rbits (uint32_t*  reg, 
-       uint32_t   shift, 
-       uint32_t   mask) 
+rbits (uint32_t* reg, 
+       uint32_t  shift, 
+       uint32_t  mask) 
 {
   return ((*reg >> shift) & mask);
 }
 
 void AikaPi::Peripheral::  
-wbits (uint32_t*  reg, 
-       uint32_t   value, 
-       uint32_t   shift, 
-       uint32_t   mask) 
+wbits (uint32_t* reg, 
+       uint32_t  value, 
+       uint32_t  shift, 
+       uint32_t  mask) 
 {
   *reg = wbits (*reg, value, shift, mask);
 }
@@ -542,8 +538,8 @@ reg (uint32_t offset,
  */
 uint32_t AikaPi::Peripheral::
 reg_rbits (uint32_t offset, 
-          uint32_t shift, 
-          uint32_t mask) const
+           uint32_t shift, 
+           uint32_t mask) const
 {
   return (rbits (reg (offset), shift, mask));
 }
@@ -665,7 +661,7 @@ clear_fifo ()
 AikaPi::DMA::
 DMA (void* phys_addr) : Peripheral (phys_addr)
 {
-
+  init ();
 }
 
 AikaPi::DMA:: 
@@ -678,6 +674,16 @@ uint32_t AikaPi::DMA::
 dma_chan_reg_offset (unsigned chan, uint32_t offset) const
 {
   return ((chan * 0x100) + offset);
+}
+
+void AikaPi::DMA:: 
+init ()
+{
+  // reset DMA chans 0 to 14. skip chan 15 for now as it has a different offset
+  for (int a = 0; a < AP::DMA::CHAN_COUNT - 1; a++)
+  {
+    reset (a);
+  }
 }
 
 volatile uint32_t* AikaPi::DMA::
@@ -731,10 +737,10 @@ void AikaPi::DMA::
 start (unsigned dma_chan,
        uint32_t start_cb_bus_addr)
 {
-  reg (dma_chan, DMA_CONBLK_AD, start_cb_bus_addr);
-  reg (dma_chan, DMA_CS,    2); // Clear DMA End flag
-  reg (dma_chan, DMA_DEBUG, 7); // Clear error flags
-  reg (dma_chan, DMA_CS,    1); // Set ACTIVE bit to start DMA
+  reg (dma_chan, AP::DMA::CONBLK_AD, start_cb_bus_addr);
+  reg (dma_chan, AP::DMA::CS,    2); // Clear DMA End flag
+  reg (dma_chan, AP::DMA::DEBUG, 7); // Clear error flags
+  reg (dma_chan, AP::DMA::CS,    1); // Set ACTIVE bit to start DMA
 }
 
 void AikaPi::DMA::
@@ -742,7 +748,7 @@ reset (unsigned dma_chan)
 {
   reg (dma_chan, DMA_CS, 1 << 31);
 
-  std::this_thread::sleep_for (std::chrono::duration<double, std::micro> (10.0));
+  std::this_thread::sleep_for (std::chrono::microseconds (10));
 }
 
 bool AikaPi::DMA::
@@ -870,14 +876,14 @@ bus (volatile void* offset) const volatile
 AikaPi::PWM:: 
 PWM (void* phys_addr) : Peripheral (phys_addr)
 {
-  reset ();
+  init ();
 }
 
 AikaPi::PWM:: 
 ~PWM ()
 {
-  stop (0);
-  stop (1);
+ // stop (0);
+ // stop (1);
 }
 
 void AikaPi::PWM:: 
@@ -885,34 +891,34 @@ init ()
 {
   reset ();
 
-  frequency   (0, 10'000.0);
-  frequency   (1, 10'000.0);
-  duty_cycle  (0, 50.0);
-  duty_cycle  (0, 50.0);
+  cm.pwm.frequency (AP::CLKMAN::FREQUENCY);
+
+  algo (0, AP::PWM::ALGO::MARKSPACE);
+  algo (1, AP::PWM::ALGO::MARKSPACE);
 }
 
 void AikaPi::PWM::
-start (unsigned channel)
+start (bool channel)
 {
   reg_wbits (AP::PWM::CTL, 1, channel ? 8 : 0);
 }
 
 void AikaPi::PWM:: 
-stop(unsigned channel)
+stop(bool channel)
 {
   reg_wbits (AP::PWM::CTL, 0, channel ? 8 : 0);
 }
 
 void AikaPi::PWM::
-algo (unsigned      channel, 
+algo (bool          channel, 
       AP::PWM::ALGO algo)
 {
   reg_wbits (AP::PWM::CTL, static_cast<bool>(algo), channel ? 15 : 7);
 }
 
 void AikaPi::PWM::
-use_fifo (unsigned channel, 
-          bool     value)
+use_fifo (bool channel, 
+          bool value)
 {
   reg_wbits (AP::PWM::CTL, value, channel ? 13 : 5);
 }
@@ -921,36 +927,96 @@ void AikaPi::PWM::
 reset ()
 {
   reg (AP::PWM::CTL,  0x40);
+  std::this_thread::sleep_for (std::chrono::microseconds (10));
+
   reg (AP::PWM::STA,  0x1FE);
+  std::this_thread::sleep_for (std::chrono::microseconds (10));
+
   reg (AP::PWM::RNG1, 0x20);
+  std::this_thread::sleep_for (std::chrono::microseconds (10));
+
+  reg (AP::PWM::DAT1, 0x0);
+  std::this_thread::sleep_for (std::chrono::microseconds (10));
+
+  reg (AP::PWM::DAT2, 0x0);
+  std::this_thread::sleep_for (std::chrono::microseconds (10));
 }
 
-void AikaPi::PWM::
+double AikaPi::PWM::
 frequency (bool   channel,
            double value)
 {
   uint32_t range = std::round (cm.pwm.frequency () / value);
 
-  std::cout << "cm pwm frequency: " << cm.pwm.frequency () << "\n";
-
   reg (channel ? AP::PWM::RNG2 : AP::PWM::RNG1, range);
+
+  duty_cycle (channel, m_duty_cycle);
+
+  return (cm.pwm.frequency () / range);
 }
 
 void AikaPi::PWM:: 
 duty_cycle (bool   channel,
             double value)
 {
-  double dc_percentage  = (std::fmod (value, 100.0)) / (100.0);
-  double fifo_data      = range (channel) * dc_percentage; 
+  m_duty_cycle = std::fmod (value, 101.0);
 
-  reg (AP::PWM::DAT1, fifo_data);
-  reg (AP::PWM::FIF1, fifo_data); 
+  double dc_percentage  = m_duty_cycle / 100.0;
+  double dc_data        = std::round (range (channel) * dc_percentage); 
+
+  if (is_using_fifo (channel))
+  {
+    reg (AP::PWM::FIF1, dc_data);
+  }
+  else 
+  {
+    reg (channel ? AP::PWM::DAT2 : AP::PWM::DAT1, dc_data);
+  }
 }
 
 uint32_t AikaPi::PWM:: 
 range (bool channel)
 {
   return (*reg (channel ? AP::PWM::RNG2 : AP::PWM::RNG1));
+}
+
+bool AikaPi::PWM:: 
+is_using_fifo (bool channel)
+{
+  return (reg_rbits (AP::PWM::CTL, channel ? 13 : 5));
+}
+
+void AikaPi::PWM:: 
+repeat_last_data (bool channel,
+                  bool value)
+{
+  reg_wbits (AP::PWM::CTL, value, channel ? 10 : 2);
+}
+
+void AikaPi::PWM::
+clear_fifo ()
+{
+  reg_wbits (AP::PWM::CTL, 1, 6);
+
+  // For some reason, setting the clear fifo bit DOES NOT
+  // completely clear out the FIFO! The FIFO empty flag
+  // isn't even zero after the FIFO clear operation.
+
+  //while (!is_fifo_empty ());
+
+  std::this_thread::sleep_for (std::chrono::microseconds (10));
+}
+
+bool AikaPi::PWM:: 
+is_fifo_empty () const
+{
+  return (reg_rbits (AP::PWM::STA, 1));
+}
+
+bool AikaPi::PWM:: 
+is_fifo_full () const
+{
+  return (reg_rbits (AP::PWM::STA, 0));
 }
 
 AikaPi::GPIO::
@@ -1358,6 +1424,12 @@ source (AP::CLKMAN::SOURCE source)
               data = wbits (data, static_cast<uint32_t>(source), 0, 4);
 
     reg (off (AP::CLKMAN::CTL), data);
+
+    std::this_thread::sleep_for (std::chrono::microseconds (10));
+  }
+  else 
+  {
+    throw (std::runtime_error ("Attempt to change Clock Manager source while it is running."));
   }
 }        
 
@@ -1370,16 +1442,29 @@ mash (AP::CLKMAN::MASH mash)
               data = wbits (data, static_cast<uint32_t>(mash), 9, 2);       
 
     reg (off (AP::CLKMAN::CTL), data);
+
+    std::this_thread::sleep_for (std::chrono::microseconds (10));
+  }
+  else 
+  {
+    throw (std::runtime_error ("Attempt to change Clock Manager MASH while it is running."));
   }
 }
 
 void AikaPi::ClockManager::ClkManPeriph:: 
 divisor (uint32_t integral, uint32_t fractional)
 {
-  reg (off (AP::CLKMAN::DIV), (AP::CLKMAN::PASSWD) | (integral << 12) |
-    (fractional));
-  
-  disp_reg (off (AP::CLKMAN::CTL));
+  if (!is_running ())
+  {
+    reg (off (AP::CLKMAN::DIV), (AP::CLKMAN::PASSWD) | (integral << 12) |
+      (fractional));
+    
+    std::this_thread::sleep_for (std::chrono::microseconds (10));
+  }
+  else 
+  {
+    throw (std::runtime_error ("Attempt to change Clock Manager divisor while it is running."));
+  }
 }
 
 void AikaPi::ClockManager::ClkManPeriph:: 
@@ -1391,7 +1476,7 @@ frequency (double             value,
   stop ();
 
   // 2. Calculate the divisor
-  double divi = static_cast<double>(source_val) / value;
+  double divi = AP::CLKMAN::SOURCE_FREQUENCY [static_cast<unsigned>(source_val)] / value;
 
   // 3. Extract divisor's integral and fractional parts
   double d_integral;
@@ -1414,27 +1499,26 @@ frequency (double             value,
 
   // 7. Start the clock generator
   start ();
-
-  disp_reg (off (AP::CLKMAN::CTL));
 }
 
 double AikaPi::ClockManager::ClkManPeriph:: 
 frequency ()
 {
-  uint32_t  reg_val       = *reg (off (AP::CLKMAN::DIV));
+  uint32_t  reg_val       = *(reg (off (AP::CLKMAN::DIV)));
   uint32_t  u_integral    = (reg_val >> 12) & 0xFFF;
   uint32_t  u_fractional  = reg_val & 0xFFF;
-  double    d_divisor     = static_cast<double>(u_integral);
+  double    d_integral    = static_cast<double>(u_integral);
   double    d_fractional  = static_cast<double>(u_fractional) / 12.0;
-  double    frequency     = static_cast<double>(source ()) / (d_divisor + d_fractional);
-  
+  double    frequency     = AP::CLKMAN::SOURCE_FREQUENCY[static_cast<unsigned>
+                              (source ())] / (d_integral + d_fractional);
+
   return (frequency);
 }
 
 AP::CLKMAN::SOURCE AikaPi::ClockManager::ClkManPeriph::
 source ()
 {
-  unsigned source = reg_rbits (off (AP::CLKMAN::CTL), 0, 4);
+  unsigned source = reg_rbits (off (AP::CLKMAN::CTL), 0, 0xF);
 
   switch (source)
   {
