@@ -418,12 +418,16 @@ map_phys_to_virt (void*     phys_addr,
 void AikaPi::Peripheral:: 
 map_addresses (void* phys_addr)
 {
+  std::cout << "mapping: " << phys_addr << std::endl;
+
   m_phys  = phys_addr;
   m_size  = page_roundup (PAGE_SIZE);
   m_bus   = reinterpret_cast<uint8_t*>(phys_addr) - 
             reinterpret_cast<uint8_t*>(PHYS_REG_BASE) + 
             reinterpret_cast<uint8_t*>(BUS_REG_BASE);
   m_virt  = map_phys_to_virt (phys_addr, m_size);
+
+  std::cout << "ok!" << std::endl;
 }
 
 void* AikaPi::Peripheral::
@@ -892,7 +896,7 @@ init ()
   reset ();
 
   cm.pwm.frequency (AP::CLKMAN::FREQUENCY);
-
+  
   algo (0, AP::PWM::ALGO::MARKSPACE);
   algo (1, AP::PWM::ALGO::MARKSPACE);
 }
@@ -1022,7 +1026,7 @@ is_fifo_full () const
 AikaPi::GPIO::
 GPIO (void* phys_addr) : Peripheral (phys_addr)
 {
-
+  std::cout << "Hello GPIO?" << std::endl;
 }
 
 AikaPi::GPIO::
@@ -1397,6 +1401,9 @@ stop ()
 void AikaPi::ClockManager::ClkManPeriph::
 start ()
 {
+  disp_reg (off (AP::CLKMAN::CTL));
+  disp_reg (off (AP::CLKMAN::DIV));
+
   if (!is_running ())
   {
     uint32_t  data = *(reg (off (AP::CLKMAN::CTL))) | AP::CLKMAN::PASSWD;
@@ -1406,8 +1413,13 @@ start ()
     reg (off (AP::CLKMAN::CTL), data);
   }
 
+  std::cout << "Hello?" << std::endl;
+
   while (!is_running ());
+
+  std::cout << "Hello?" << std::endl;
 }
+
 
 bool AikaPi::ClockManager::ClkManPeriph:: 
 is_running ()
@@ -1569,6 +1581,254 @@ ClockManager (void* phys_addr)
     pwm (phys_addr, AP::CLKMAN::TYPE::PWM)
 {
 
+}
+
+AikaPi::SPI_BB:: 
+SPI_BB (unsigned CS, unsigned MISO, unsigned MOSI, unsigned SCLK, double baud, AP::SPI::MODE i_mode)
+  : m_CS (CS), m_MISO (MISO), m_MOSI (MOSI), m_SCLK (SCLK), m_baud (baud)
+{
+  if (m_baud > AP::SPI_BB::MAX_BAUD)
+  {
+    throw (std::runtime_error ("Greater than maximum baud rate for SPI BB set. Max 250kHz."));
+  }
+
+  init ();
+}
+
+AikaPi::SPI_BB::
+~SPI_BB ()
+{
+  // Reset GPIO pins to input
+  gpio.set (m_CS,   AP::GPIO::FUNC::INPUT, AP::GPIO::PULL::OFF);
+  gpio.set (m_MISO, AP::GPIO::FUNC::INPUT, AP::GPIO::PULL::OFF);
+  gpio.set (m_MOSI, AP::GPIO::FUNC::INPUT, AP::GPIO::PULL::OFF);
+  gpio.set (m_SCLK, AP::GPIO::FUNC::INPUT, AP::GPIO::PULL::OFF);
+}
+
+void AikaPi::SPI_BB:: 
+init ()
+{
+  // TO-DO: do checking and validation of the provided RPI pins
+
+  // 1. Set GPIO pins
+  gpio.set (m_CS,   AP::GPIO::FUNC::OUTPUT, AP::GPIO::PULL::OFF, 0);
+  gpio.set (m_MISO, AP::GPIO::FUNC::INPUT,  AP::GPIO::PULL::OFF, 0);
+  gpio.set (m_MOSI, AP::GPIO::FUNC::OUTPUT, AP::GPIO::PULL::OFF, 0);
+  gpio.set (m_SCLK, AP::GPIO::FUNC::OUTPUT, AP::GPIO::PULL::OFF, 0);
+
+  // 2. Set delay
+  delay (m_baud);
+}
+
+void AikaPi::SPI_BB::
+delay ()
+{
+  std::this_thread::sleep_for (std::chrono::duration <double, std::micro> (m_delay));
+}
+
+void AikaPi::SPI_BB:: 
+delay (double baud)
+{
+  m_delay = (500'000.0 / baud) - 1;
+}
+
+void AikaPi::SPI_BB::
+set_CS ()
+{
+  gpio.write (m_CS, m_CS_polarity);
+}
+
+void AikaPi::SPI_BB:: 
+clear_CS ()
+{
+  gpio.write (m_CS, !m_CS_polarity);
+}
+
+void AikaPi::SPI_BB:: 
+set_SCLK ()
+{
+  gpio.write (m_SCLK, !cpol ());
+}
+
+void AikaPi::SPI_BB:: 
+clear_SCLK ()
+{
+  gpio.write (m_SCLK, cpol ());
+}
+
+void AikaPi::SPI_BB::
+start ()
+{
+  clear_SCLK ();
+
+  delay ();
+
+  set_CS ();
+
+  delay ();
+}
+
+void AikaPi::SPI_BB:: 
+stop ()
+{
+  delay ();
+
+  clear_CS ();
+
+  delay ();
+
+  clear_SCLK ();
+}
+
+uint8_t AikaPi::SPI_BB:: 
+xfer_byte (char txd)
+{
+  uint8_t rxd;
+
+  if (cpha ())
+  {
+    // CPHA = 1
+    // Write on set clock
+    // Read on clear clock
+
+    for (int bit = 0; bit < 8; bit++)
+    {
+      set_SCLK ();
+
+      if (m_shift_out_msb_first)
+      {
+        gpio.write (m_MOSI, txd & 0x80);
+        txd <<= 1;
+      }
+      else 
+      {
+        gpio.write (m_MOSI, txd & 0x01);
+        txd >>= 1;
+      }
+
+      delay ();
+
+      clear_SCLK ();
+
+      if (m_receive_msb_first)
+      {
+        rxd = (rxd << 1) | gpio.read (m_MISO);
+      }
+      else 
+      {
+        rxd = (rxd >> 1) | ((gpio.read (m_MISO)) << 7);
+      }
+
+      delay ();
+    }
+  }
+  else 
+  {
+    // CPHA = 0;
+    // Read on set clock
+    // Write on clear clock
+
+    for (int bit = 0; bit < 8; bit++)
+    {
+      if (m_shift_out_msb_first)
+      {
+        gpio.write (m_MOSI, txd & 0x80);
+        txd <<= 1;
+      }
+      else 
+      {
+        gpio.write (m_MOSI, txd & 0x01);
+        txd >>= 1;
+      }
+
+      delay ();
+
+      set_SCLK ();
+
+      if (m_receive_msb_first)
+      {
+        rxd = (rxd << 1) | gpio.read (m_MISO);
+      }
+      else 
+      {
+        rxd = (rxd >> 1) | ((gpio.read (m_MISO)) << 7);
+      }
+
+      delay ();
+
+      clear_SCLK ();
+    }
+  }
+
+  return (rxd);
+}
+
+bool AikaPi::SPI_BB:: 
+cpol ()
+{
+  return (((static_cast<uint8_t>(m_mode)) >> 1) & 0x1);
+}
+
+bool AikaPi::SPI_BB:: 
+cpha ()
+{
+  return ((static_cast<uint8_t>(m_mode)) & 0x1);
+}
+
+void AikaPi::SPI_BB::
+mode (AP::SPI::MODE value)
+{
+  m_mode = value;
+}
+
+void AikaPi::SPI_BB:: 
+baud (double value)
+{
+  m_baud = value;
+
+  delay (m_baud);
+}
+
+void AikaPi::SPI_BB:: 
+shift_out_msb_first (bool value)
+{
+  m_shift_out_msb_first = value;
+}
+
+void AikaPi::SPI_BB:: 
+receive_msb_first (bool value)
+{
+  m_receive_msb_first = value;
+}
+
+void AikaPi::SPI_BB::
+cs_polarity (bool value)
+{
+  m_CS_polarity = value;
+}
+
+void AikaPi::SPI_BB::
+xfer (char*    rxd,
+      char*    txd,
+      unsigned length)
+{
+  start ();
+
+  for (int pos = 0; pos < length; pos++)
+  {
+    rxd[pos] = xfer_byte (txd[pos]);
+  }
+
+  stop ();
+}
+
+void AikaPi::SPI_BB::
+write (char*    txd,
+       unsigned length)
+{
+  char rxd[length];
+
+  xfer (rxd, txd, length);
 }
 
 void

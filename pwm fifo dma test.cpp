@@ -55,15 +55,6 @@ int main ()
         AP.pwm.bus    (AP::PWM::FIF1),
         4,
         0,
-        uncached.bus  (&info.cb[1]),
-        0
-      },
-      {
-        flag,
-        uncached.bus  (&info.pwm_fif1_data),
-        AP.pwm.bus    (AP::PWM::FIF1),
-        4,
-        0,
         uncached.bus  (&info.cb[0]),
         0
       }

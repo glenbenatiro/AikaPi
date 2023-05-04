@@ -6,7 +6,7 @@
 // Link to the BCM2385 datasheet:
 // // https://www.raspberrypi.org/app/uploads/2012/02/BCM2835-ARM-Peripherals.pdf
 
-#define RPI_VERSION 3
+constexpr unsigned RPI_VERSION = 3;
 
 // btw: The Pi-0 and Pi-3 do "overclock" the base clock up to 400 MHz on load. 
 // And it may cause SPI problems if the clock isn't fixed 
@@ -18,7 +18,7 @@ constexpr uint32_t PI_01_REG_BASE = 0x20000000; // Pi Zero or 1
 constexpr uint32_t PI_23_REG_BASE = 0x3F000000; // Pi 2 or 3
 constexpr uint32_t PI_4_REG_BASE  = 0xFE000000; // Pi 4
 
-#if RPI_VERSION == 0
+#if   RPI_VERSION == 0
   constexpr uint32_t PHYS_REG_BASE  = PI_01_REG_BASE;
   constexpr uint32_t CLOCK_HZ	      = 250000000;
 //constexpr uint32_t SPI_CLOCK_HZ   = 400000000; // !! https://github.com/raspberrypi/linux/issues/2094 !!
@@ -457,27 +457,34 @@ namespace AP
 {
   namespace RPI
   {
+    // btw: The Pi-0 and Pi-3 do "overclock" the base clock up to 400 MHz on load. 
+    // And it may cause SPI problems if the clock isn't fixed 
+    // (i.e. at 250 MHz with core_freq=250 in /boot/config.txt).
+
     static constexpr uint32_t PI_01_REG_BASE = 0x20000000; // Pi Zero or 1 
     static constexpr uint32_t PI_23_REG_BASE = 0x3F000000; // Pi 2 or 3
     static constexpr uint32_t PI_4_REG_BASE  = 0xFE000000; // Pi 4
 
     #if RPI_VERSION == 0
-      static constexpr uint32_t PHYS_REG_BASE  = PI_01_REG_BASE;
-      static constexpr double CLOCK_HZ	      = 250000000.0;
-      //static constexpr double SPI_CLOCK_HZ   = 400000000.0; // !! https://github.com/raspberrypi/linux/issues/2094 !!
-      static constexpr double SPI_CLOCK_HZ   = 250000000.0;  // !! https://github.com/raspberrypi/linux/issues/2094 !!
+      static constexpr uint32_t PHYS_REG_BASE = PI_01_REG_BASE;
+      static constexpr double   CLOCK_HZ	    = 250'000'000;
+   // static constexpr double   SPI_CLOCK_HZ  = 400'000'000;  // !! https://github.com/raspberrypi/linux/issues/2094 !!
+      static constexpr double   SPI_CLOCK_HZ  = 250'000'000;  // !! https://github.com/raspberrypi/linux/issues/2094 !!
+    
     #elif RPI_VERSION == 1
-      static constexpr uint32_t PHYS_REG_BASE  = PI_01_REG_BASE;
-      static constexpr double CLOCK_HZ       = 250000000.0;
-      static constexpr double SPI_CLOCK_HZ   = 250000000.0;
+      static constexpr uint32_t PHYS_REG_BASE = PI_01_REG_BASE;
+      static constexpr double   CLOCK_HZ      = 250'000'000;
+      static constexpr double   SPI_CLOCK_HZ  = 250'000'000;
+    
     #elif RPI_VERSION == 2 || RPI_VERSION == 3
-      static constexpr uint32_t PHYS_REG_BASE  = PI_23_REG_BASE;
-      static constexpr double CLOCK_HZ       = 250000000.0;
-      static constexpr double SPI_CLOCK_HZ   = 250000000.0;
+      static constexpr uint32_t PHYS_REG_BASE = PI_23_REG_BASE;
+      static constexpr double   CLOCK_HZ      = 250'000'000;
+      static constexpr double   SPI_CLOCK_HZ  = 250'000'000;
+    
     #elif RPI_VERSION == 4
-      static constexpr uint32_t PHYS_REG_BASE  = PI_4_REG_BASE;
-      static constexpr double CLOCK_HZ	      = 375000000.0;
-      static constexpr double SPI_CLOCK_HZ   = 200000000.0;
+      static constexpr uint32_t PHYS_REG_BASE = PI_4_REG_BASE;
+      static constexpr double   CLOCK_HZ	    = 375'000'000;
+      static constexpr double   SPI_CLOCK_HZ  = 200'000'000;
     #endif
 
     namespace PIN
@@ -660,6 +667,34 @@ namespace AP
 
   namespace SPI
   {
+    enum class MODE
+    {
+      _0,
+      _1,
+      _2,
+      _3
+    };
+
+    inline constexpr MODE CALC_MODE (bool CPOL, bool CPHA) 
+    {
+      if (!CPOL && !CPHA)
+      {
+        return MODE::_0;
+      }
+      else if (!CPOL && CPHA)
+      {
+        return MODE::_1;
+      }
+      else if (CPOL && !CPHA)
+      {
+        return MODE::_2;
+      }
+      else if (CPOL && CPHA)
+      {
+        return MODE::_3;
+      }
+    };
+
     constexpr uint32_t BASE = RPI::PHYS_REG_BASE + 0x204000;
     constexpr uint32_t CS   = 0x00;
     constexpr uint32_t FIFO = 0x04;
@@ -732,6 +767,12 @@ namespace AP
     constexpr uint32_t CTL       = 0x98;
     constexpr uint32_t DIV       = 0xA4;
     constexpr double   FREQUENCY = 100'000'000.0;
+  };
+
+  namespace SPI_BB
+  {
+    constexpr double MAX_BAUD = 200'000.0;
+    constexpr double MIN_BAUD = 50.0;
   };
 };
 
@@ -868,7 +909,7 @@ class AikaPi
       private:
         uint32_t dma_chan_reg_offset (unsigned chan, uint32_t offset) const;
 
-      protected:
+      private:
         void init ();
 
       public:
@@ -894,10 +935,10 @@ class AikaPi
     
     class PWM : public Peripheral 
     {
-      protected:
+      private:
         double m_duty_cycle = 50.0;
 
-      protected:
+      private:
         void init ();       
 
       public:
@@ -953,7 +994,6 @@ class AikaPi
         };
 
       private:
-        //std::array<SPI, 2> m_spi;
         SPI m_spi[2];
       
       public:
@@ -973,6 +1013,7 @@ class AikaPi
           protected:
             AP::CLKMAN::TYPE m_type;
 
+          protected:
             uint32_t off (uint32_t offset) const;
           
           public:
@@ -1023,6 +1064,50 @@ class AikaPi
       void*    map_uncached_mem  (unsigned size);
       uint32_t bus               (void* offset) const volatile;
       uint32_t bus               (volatile void* offset) const volatile;
+    };
+
+    class SPI_BB
+    {
+      private:
+        unsigned  m_CS,
+                  m_MISO,
+                  m_MOSI,
+                  m_SCLK;
+
+        double    m_baud,
+                  m_delay;
+
+        bool      m_CS_polarity         = 0,  // CS is active high or low
+                  m_shift_out_msb_first = true,
+                  m_receive_msb_first   = true;
+        
+        AP::SPI::MODE m_mode;
+    
+      private: 
+        void    init       ();
+        void    delay      ();
+        void    delay      (double baud);
+        void    set_CS     ();
+        void    clear_CS   ();
+        void    set_SCLK   ();
+        void    clear_SCLK ();
+        void    start      ();
+        void    stop       ();
+        uint8_t xfer_byte  (char txd);
+        bool    cpol       ();
+        bool    cpha       ();
+
+      public:
+        SPI_BB (unsigned CS, unsigned MISO, unsigned MOSI, unsigned SCLK, double baud, AP::SPI::MODE i_mode = AP::SPI::MODE::_0);
+       ~SPI_BB ();
+
+        void mode                 (AP::SPI::MODE value);
+        void baud                 (double value);
+        void shift_out_msb_first  (bool value);
+        void receive_msb_first    (bool value);
+        void cs_polarity          (bool value);
+        void xfer                 (char* rxd, char* txd, unsigned length);
+        void write                (char* txd, unsigned length);
     };
 
   private: 
@@ -1103,7 +1188,7 @@ class AikaPi
     //void dma_start (unsigned channel, AP_MemoryMap *uncached_dma_data, AP_DMA_CB *dma_cb);
 
     void     dma_disp         (int chan);
-    void     dma_reset         (int chan);
+    void     dma_reset        (int chan);
     void     dma_wait         (int chan);
     void      dma_pause       (unsigned channel);
     bool      is_dma_paused   (unsigned channel);
