@@ -22,6 +22,7 @@ AikaPi::DMA           AikaPi::dma   (reinterpret_cast<void*>(AP::DMA::BASE));
 AikaPi::PWM           AikaPi::pwm   (reinterpret_cast<void*>(AP::PWM::BASE));
 AikaPi::GPIO          AikaPi::gpio  (reinterpret_cast<void*>(AP::GPIO::BASE));
 AikaPi::AUX           AikaPi::aux   (reinterpret_cast<void*>(AP::AUX::BASE));
+AikaPi::SystemTimer   AikaPi::st    (reinterpret_cast<void*>(AP::SYSTIMER::BASE));
 
 // --- Utility Class ---
 /**
@@ -1026,7 +1027,7 @@ is_fifo_full () const
 AikaPi::GPIO::
 GPIO (void* phys_addr) : Peripheral (phys_addr)
 {
-  std::cout << "Hello GPIO?" << std::endl;
+
 }
 
 AikaPi::GPIO::
@@ -1401,9 +1402,6 @@ stop ()
 void AikaPi::ClockManager::ClkManPeriph::
 start ()
 {
-  disp_reg (off (AP::CLKMAN::CTL));
-  disp_reg (off (AP::CLKMAN::DIV));
-
   if (!is_running ())
   {
     uint32_t  data = *(reg (off (AP::CLKMAN::CTL))) | AP::CLKMAN::PASSWD;
@@ -1413,11 +1411,7 @@ start ()
     reg (off (AP::CLKMAN::CTL), data);
   }
 
-  std::cout << "Hello?" << std::endl;
-
   while (!is_running ());
-
-  std::cout << "Hello?" << std::endl;
 }
 
 
@@ -1581,6 +1575,24 @@ ClockManager (void* phys_addr)
     pwm (phys_addr, AP::CLKMAN::TYPE::PWM)
 {
 
+}
+
+AikaPi::SystemTimer:: 
+SystemTimer (void* phys_addr) : Peripheral (phys_addr)
+{
+
+}
+
+AikaPi::SystemTimer::
+~SystemTimer ()
+{
+
+}
+
+uint32_t AikaPi::SystemTimer:: 
+low () const 
+{
+  return (*(reg (AP::SYSTIMER::CLO)));
 }
 
 AikaPi::SPI_BB:: 
@@ -2267,9 +2279,9 @@ AikaPi::terminate (int sig)
   printf("Closing\n");
   
   spi_disable();
-  //dma_reset(LABC::DMA_CHAN::PWM_PACING);
-  //dma_reset(LABC::DMA_CHAN::OSC_RX);
-  //dma_reset(LABC::DMA_CHAN::OSC_TX);
+  //dma_reset(LABC::DMA::CHANPWM_PACING);
+  //dma_reset(LABC::DMA::CHANOSC_RX);
+  //dma_reset(LABC::DMA::CHANOSC_TX);
   
   // unmap_periph_mem (&m_vc_mem);
   unmap_periph_mem (&m_regs_st);

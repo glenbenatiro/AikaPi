@@ -6,7 +6,7 @@
 // Link to the BCM2385 datasheet:
 // // https://www.raspberrypi.org/app/uploads/2012/02/BCM2835-ARM-Peripherals.pdf
 
-constexpr unsigned RPI_VERSION = 3;
+constexpr unsigned RPI_VERSION = 0;
 
 // btw: The Pi-0 and Pi-3 do "overclock" the base clock up to 400 MHz on load. 
 // And it may cause SPI problems if the clock isn't fixed 
@@ -612,8 +612,13 @@ namespace AP
     namespace TI_DATA
     {
       inline constexpr uint32_t PERMAP (PERIPH_DREQ periph) {return ((static_cast<uint32_t>(periph)) << 16);}
+             constexpr uint32_t SRC_DREQ  = 1 << 10;
+             constexpr uint32_t SRC_INC   = 1 << 8;
              constexpr uint32_t DEST_DREQ = 1 << 6;
+             constexpr uint32_t DEST_INC  = 1 << 4;
              constexpr uint32_t WAIT_RESP = 1 << 3;
+             constexpr uint32_t INTEN     = 1 << 0;
+
     };
 
     constexpr uint32_t BASE       = RPI::PHYS_REG_BASE + 0x007000;
@@ -626,6 +631,8 @@ namespace AP
     constexpr uint32_t STRIDE     = 0x18;
     constexpr uint32_t NEXTCONBK  = 0x1C;
     constexpr uint32_t DEBUG      = 0x20;
+    constexpr uint32_t INT_STATUS = 0xFE0;
+    constexpr uint32_t ENABLE     = 0xFF0;
 
     constexpr unsigned CHAN_COUNT = 16;
   };
@@ -759,14 +766,26 @@ namespace AP
   };
 
     constexpr uint32_t BASE      = RPI::PHYS_REG_BASE + 0x101000;
-    constexpr uint32_t PWM_CTL   = 0x98;
-    constexpr uint32_t PCM_CTL   = 0xA0;
+    constexpr uint32_t PWM_CTL   = 0xA0;
+    constexpr uint32_t PCM_CTL   = 0x98;
     constexpr uint32_t PWM_DIV   = 0xA4;
     constexpr uint32_t PCM_DIV   = 0x9C;
     constexpr uint32_t PASSWD    = 0x5a << 24;
-    constexpr uint32_t CTL       = 0x98;
+    constexpr uint32_t CTL       = 0xA0;
     constexpr uint32_t DIV       = 0xA4;
     constexpr double   FREQUENCY = 100'000'000.0;
+  };
+
+  namespace SYSTIMER
+  {
+    constexpr uint32_t BASE = RPI::PHYS_REG_BASE + 0x003000;
+    constexpr uint32_t CS   = 0x00;
+    constexpr uint32_t CLO  = 0x04;
+    constexpr uint32_t CHI  = 0x08;
+    constexpr uint32_t C0   = 0x0C;
+    constexpr uint32_t C1   = 0x10;
+    constexpr uint32_t C2   = 0x14;
+    constexpr uint32_t C3   = 0x18;
   };
 
   namespace SPI_BB
@@ -920,7 +939,7 @@ class AikaPi
                void      reg        (unsigned dma_chan, uint32_t offset, uint32_t value);
                uint32_t  reg_rbits  (unsigned dma_chan, uint32_t offset, unsigned shift, uint32_t mask = 0x1) const;
                void      reg_wbits  (unsigned dma_chan, uint32_t offset, unsigned value, unsigned shift, uint32_t mask = 0x1);
-               void      disp_reg   (unsigned dma_chan, uint32_t offset) const;      
+               void      disp_reg   (unsigned dma_chan, uint32_t offset) const;    
                uint32_t  dest_ad    (unsigned dma_chan);
                void      start      (unsigned dma_chan, uint32_t start_cb_bus_addr);
                void      reset      (unsigned dma_chan);
@@ -1052,6 +1071,21 @@ class AikaPi
         ClockManager (void* phys_addr);
     };
 
+    class SystemTimer : public Peripheral
+    {
+      // https://jsandler18.github.io/extra/sys-time.html
+      // The system timer is a Free Running Timer that 
+      // increments a 64 bit counter every microsecond, 
+      // starting as soon as the Pi boots up, 
+      // and runs in the background for as long as the Pi is on.
+      
+      public: 
+        SystemTimer (void* phys_addr);
+       ~SystemTimer ();
+
+       uint32_t low () const;
+    };
+
 
   public: 
     class Uncached : public Peripheral
@@ -1128,6 +1162,7 @@ class AikaPi
     static GPIO         gpio;
     static AUX          aux;
     static ClockManager cm;
+    static SystemTimer  st;
 
     double m_pwm_range = 0.0;
 
