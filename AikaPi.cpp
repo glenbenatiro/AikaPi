@@ -1411,6 +1411,8 @@ start ()
     reg (off (AP::CLKMAN::CTL), data);
   }
 
+  disp_reg (off (AP::CLKMAN::CTL));
+
   while (!is_running ());
 }
 

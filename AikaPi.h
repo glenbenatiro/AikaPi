@@ -6,7 +6,7 @@
 // Link to the BCM2385 datasheet:
 // // https://www.raspberrypi.org/app/uploads/2012/02/BCM2835-ARM-Peripherals.pdf
 
-constexpr unsigned RPI_VERSION = 0;
+#define RPI_VERSION 3
 
 // btw: The Pi-0 and Pi-3 do "overclock" the base clock up to 400 MHz on load. 
 // And it may cause SPI problems if the clock isn't fixed 
