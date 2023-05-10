@@ -419,16 +419,12 @@ map_phys_to_virt (void*     phys_addr,
 void AikaPi::Peripheral:: 
 map_addresses (void* phys_addr)
 {
-  std::cout << "mapping: " << phys_addr << std::endl;
-
   m_phys  = phys_addr;
   m_size  = page_roundup (PAGE_SIZE);
   m_bus   = reinterpret_cast<uint8_t*>(phys_addr) - 
             reinterpret_cast<uint8_t*>(PHYS_REG_BASE) + 
             reinterpret_cast<uint8_t*>(BUS_REG_BASE);
   m_virt  = map_phys_to_virt (phys_addr, m_size);
-
-  std::cout << "ok!" << std::endl;
 }
 
 void* AikaPi::Peripheral::
@@ -1410,8 +1406,6 @@ start ()
 
     reg (off (AP::CLKMAN::CTL), data);
   }
-
-  disp_reg (off (AP::CLKMAN::CTL));
 
   while (!is_running ());
 }
