@@ -1065,7 +1065,7 @@ pull  (unsigned       pin,
 
   // 2. Wait 150 cycles - this provides the required set-up time
   //    for the control signal
-  std::this_thread::sleep_for (std::chrono::duration<double, std::micro> (10));
+  std::this_thread::sleep_for (std::chrono::microseconds (10));
 
   // 3. Write to GPPUDCLK0/1 to clock the control signal into the
   //    GPIO pads you wish to modify
@@ -1073,7 +1073,7 @@ pull  (unsigned       pin,
 
   // 4. Wait 150 cycles - this provides the required hold time
   //    for the control signal
-  std::this_thread::sleep_for (std::chrono::duration<double, std::micro> (10));
+  std::this_thread::sleep_for (std::chrono::microseconds (10));
 
   // 5. Write to GPPUD to remove the control signal
   reg (AP::GPIO::GPPUD, 0);
@@ -1593,7 +1593,7 @@ low () const
 
 AikaPi::SPI_BB:: 
 SPI_BB (unsigned CS, unsigned MISO, unsigned MOSI, unsigned SCLK, double baud, AP::SPI::MODE i_mode)
-  : m_CS (CS), m_MISO (MISO), m_MOSI (MOSI), m_SCLK (SCLK), m_baud (baud)
+  : m_CS (CS), m_MISO (MISO), m_MOSI (MOSI), m_SCLK (SCLK), m_baud (baud), m_mode (i_mode)
 {
   if (m_baud > AP::SPI_BB::MAX_BAUD)
   {
@@ -1620,12 +1620,20 @@ init ()
 
   // 1. Set GPIO pins
   gpio.set (m_CS,   AP::GPIO::FUNC::OUTPUT, AP::GPIO::PULL::OFF, 0);
-  gpio.set (m_MISO, AP::GPIO::FUNC::INPUT,  AP::GPIO::PULL::OFF, 0);
-  gpio.set (m_MOSI, AP::GPIO::FUNC::OUTPUT, AP::GPIO::PULL::OFF, 0);
   gpio.set (m_SCLK, AP::GPIO::FUNC::OUTPUT, AP::GPIO::PULL::OFF, 0);
+  
+  if (m_MISO >= 0)
+    gpio.set (m_MISO, AP::GPIO::FUNC::INPUT,  AP::GPIO::PULL::OFF, 0);
+  
+  if (m_MOSI >= 0)
+    gpio.set (m_MOSI, AP::GPIO::FUNC::OUTPUT, AP::GPIO::PULL::OFF, 0);
+        
 
   // 2. Set delay
   delay (m_baud);
+
+  // 3. Preset chip select pin polarity
+  gpio.write (m_CS, !m_CS_polarity);
 }
 
 void AikaPi::SPI_BB::
@@ -1703,7 +1711,7 @@ xfer_byte (char txd)
     {
       set_SCLK ();
 
-      if (m_shift_out_msb_first)
+      if (m_shift_out_ms_bit_first)
       {
         gpio.write (m_MOSI, txd & 0x80);
         txd <<= 1;
@@ -1718,7 +1726,7 @@ xfer_byte (char txd)
 
       clear_SCLK ();
 
-      if (m_receive_msb_first)
+      if (m_receive_ms_bit_first)
       {
         rxd = (rxd << 1) | gpio.read (m_MISO);
       }
@@ -1738,7 +1746,7 @@ xfer_byte (char txd)
 
     for (int bit = 0; bit < 8; bit++)
     {
-      if (m_shift_out_msb_first)
+      if (m_shift_out_ms_bit_first)
       {
         gpio.write (m_MOSI, txd & 0x80);
         txd <<= 1;
@@ -1753,7 +1761,7 @@ xfer_byte (char txd)
 
       set_SCLK ();
 
-      if (m_receive_msb_first)
+      if (m_receive_ms_bit_first)
       {
         rxd = (rxd << 1) | gpio.read (m_MISO);
       }
@@ -1800,15 +1808,18 @@ baud (double value)
 void AikaPi::SPI_BB:: 
 shift_out_msb_first (bool value)
 {
-  m_shift_out_msb_first = value;
+  m_shift_out_ms_bit_first = value;
 }
 
 void AikaPi::SPI_BB:: 
 receive_msb_first (bool value)
 {
-  m_receive_msb_first = value;
+  m_receive_ms_bit_first = value;
 }
 
+/**
+ * @brief Set chip select pin asserted logic level 
+ */
 void AikaPi::SPI_BB::
 cs_polarity (bool value)
 {

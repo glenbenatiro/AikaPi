@@ -6,7 +6,7 @@
 // Link to the BCM2385 datasheet:
 // // https://www.raspberrypi.org/app/uploads/2012/02/BCM2835-ARM-Peripherals.pdf
 
-#define RPI_VERSION 3
+#define RPI_VERSION 0
 
 // btw: The Pi-0 and Pi-3 do "overclock" the base clock up to 400 MHz on load. 
 // And it may cause SPI problems if the clock isn't fixed 
@@ -517,6 +517,8 @@ namespace AP
         constexpr unsigned CE1  = 7;
       };
     };
+
+    constexpr uint32_t PAGE_SIZE = 0x1000;
   };
 
   namespace AUX
@@ -674,6 +676,11 @@ namespace AP
 
   namespace SPI
   {
+    // https://www.analog.com/en/analog-dialogue/articles/introduction-to-spi-interface.html
+    // 0: CS polarity low, data sampled rising, shifted out falling
+    // 1: CS polarity low, data sampled falling, shifted out rising
+    // 2: CS polarity high, data sampled rising, shifted out falling
+    // 3: CS polarity high, data sampled faling, shifted out rising
     enum class MODE
     {
       _0,
@@ -1103,17 +1110,17 @@ class AikaPi
     class SPI_BB
     {
       private:
-        unsigned  m_CS,
-                  m_MISO,
-                  m_MOSI,
-                  m_SCLK;
+        int     m_CS,
+                m_MISO,
+                m_MOSI,
+                m_SCLK;
 
-        double    m_baud,
-                  m_delay;
+        double  m_baud,
+                m_delay;
 
-        bool      m_CS_polarity         = 0,  // CS is active high or low
-                  m_shift_out_msb_first = true,
-                  m_receive_msb_first   = true;
+        bool    m_CS_polarity             = 0,  // CS is active high or low
+                m_shift_out_ms_bit_first  = true,
+                m_receive_ms_bit_first    = true;
         
         AP::SPI::MODE m_mode;
     
