@@ -23,140 +23,25 @@ AikaPi::PWM           AikaPi::pwm   (reinterpret_cast<void*>(AP::PWM::BASE));
 AikaPi::GPIO          AikaPi::gpio  (reinterpret_cast<void*>(AP::GPIO::BASE));
 AikaPi::AUX           AikaPi::aux   (reinterpret_cast<void*>(AP::AUX::BASE));
 AikaPi::SystemTimer   AikaPi::st    (reinterpret_cast<void*>(AP::SYSTIMER::BASE));
+AikaPi::Utility       AikaPi::util  ();
 
-// --- Utility Class ---
-/**
- * @brief Return a volatile uint32_t pointer of the virtual address of a 
- *        peripheral's register 
- */
-volatile uint32_t* Utility::
-reg (const AP_MemoryMap& mem_map,
-                uint32_t      offset)
-{
-  uint32_t address = (uint32_t)(mem_map.virt) + offset;
-
-  return ((volatile uint32_t*)(address));
-}
-
-/**
- * @brief Return a uint32_t of the bus address of a peripheral's 
- *        register 
- */
-uint32_t Utility:: 
-bus (const AP_MemoryMap& mem_map, 
-               uint32_t      offset)
-{
-  uint32_t address = (uint32_t)(mem_map.bus) + offset;
-
-  return (address);
-}
-
-/**
- * @brief Return a uint32_t of the bus address of an uncached
- *        peripheral's member data, given the member's virtual address. 
- */
-uint32_t Utility:: 
-bus (const AP_MemoryMap& mem_map,
-                        void*         offset)
-{
-  uint32_t address = (uint32_t)(offset) - (uint32_t)(mem_map.virt) + 
-    (uint32_t)(mem_map.bus);
-
-  return (address);
-}
-
-/**
- * @brief Return a uint32_t bus address of an uncached peripheral's 
- *        member data, given the member's virtual address. 
- */
-uint32_t Utility:: 
-bus (const    AP_MemoryMap& mem_map,
-                  volatile void*         offset)
-{
-  uint32_t address = (uint32_t)(offset) - (uint32_t)(mem_map.virt) + 
-    (uint32_t)(mem_map.bus);
-
-  return (address);
-}
-
-/**
- * @brief Return a uint32_t of the offset of a DMA channel's register
- */
-uint32_t Utility:: 
-dma_chan_reg_offset (uint32_t dma_channel, 
-                     uint32_t dma_offset)
-{
-  uint32_t address = (dma_channel * 0x100) + dma_offset;
-
-  return (address);
-}
-
-/**
- * @brief Print the contents of a peripheral's register 
- */
-void Utility:: 
-disp_reg_virt (const AP_MemoryMap& mem_map,
-                     uint32_t      offset)
-{
-  volatile uint32_t* reg = Utility::reg (mem_map, offset);
-
-  disp_bit32 (*reg);
-}
-
-void Utility:: 
-disp_bit32 (uint32_t bits)
-{
-  std::cout << std::bitset <8> (bits >> 24) << " "
-            << std::bitset <8> (bits >> 16) << " "
-            << std::bitset <8> (bits >>  8) << " "
-            << std::bitset <8> (bits      ) << std::endl;
-}
-
-void Utility:: 
-write_reg_virt (volatile uint32_t* reg,
-                         uint32_t  value,
-                         uint32_t  mask,
-                         uint32_t  shift)
-{
-  *reg = (*reg & ~(mask << shift)) | (value << shift);
-}
-
-void Utility:: 
-write_reg_virt (AP_MemoryMap& mem_map,
-                uint32_t      offset,
-                uint32_t      value,
-                uint32_t      mask,
-                uint32_t      shift)
-{
-  write_reg_virt (reg (mem_map, offset), value, mask, shift);
-}
-
-uint32_t Utility:: 
-get_bits (uint32_t input, 
-          uint32_t shift, 
-          uint32_t mask)
-{
-  return ((input >> shift) & mask);
-}
-
-//
-
-AikaPi::AikaPi ()
+AikaPi:: 
+AikaPi ()
 {
 
 }
 
-AikaPi::~AikaPi ()
+AikaPi:: 
+~AikaPi ()
 {
-	
+  
 }
-
 
 // Mailbox
 uint32_t AikaPi::Mailbox::
 page_roundup (uint32_t addr)
 {
-  return ((addr % PAGE_SIZE == 0) ? (addr) : ((addr + PAGE_SIZE) & ~(PAGE_SIZE - 1)));
+  return ((addr % AP::RPI::PAGE_SIZE == 0) ? (addr) : ((addr + AP::RPI::PAGE_SIZE) & ~(AP::RPI::PAGE_SIZE - 1)));
 }
 
 int AikaPi::Mailbox:: 
@@ -249,7 +134,7 @@ mem_alloc (int      fd,
     .uints  =
     {
       page_roundup (size),
-      PAGE_SIZE,
+      AP::RPI::PAGE_SIZE,
       static_cast<uint32_t>(flags)
     } 
   };
@@ -350,7 +235,7 @@ AikaPi::Peripheral::
 uint32_t AikaPi::Peripheral:: 
 page_roundup (uint32_t addr)
 {
-  return ((addr % PAGE_SIZE == 0) ? (addr) : ((addr + PAGE_SIZE) & ~(PAGE_SIZE - 1)));
+  return ((addr % AP::RPI::PAGE_SIZE == 0) ? (addr) : ((addr + AP::RPI::PAGE_SIZE) & ~(AP::RPI::PAGE_SIZE - 1)));
 }
 
 void* AikaPi::Peripheral::
@@ -388,7 +273,7 @@ void AikaPi::Peripheral::
 map_addresses (void* phys_addr)
 {
   m_phys  = phys_addr;
-  m_size  = page_roundup (PAGE_SIZE);
+  m_size  = page_roundup (AP::RPI::PAGE_SIZE);
   m_bus   = reinterpret_cast<uint8_t*>(phys_addr) - 
             reinterpret_cast<uint8_t*>(PHYS_REG_BASE) + 
             reinterpret_cast<uint8_t*>(BUS_REG_BASE);
@@ -699,7 +584,7 @@ disp_reg (unsigned dma_chan,
 uint32_t AikaPi::DMA:: 
 dest_ad (unsigned dma_chan)
 {
-  return (*(reg (dma_chan, DMA_DEST_AD)));
+  return (*(reg (dma_chan, AP::DMA::DEST_AD)));
 }
 
 void AikaPi::DMA:: 
@@ -715,7 +600,7 @@ start (unsigned dma_chan,
 void AikaPi::DMA::
 reset (unsigned dma_chan)
 {
-  reg (dma_chan, DMA_CS, 1 << 31);
+  reg (dma_chan, AP::DMA::CS, 1 << 31);
 
   std::this_thread::sleep_for (std::chrono::microseconds (10));
 }
@@ -723,13 +608,13 @@ reset (unsigned dma_chan)
 bool AikaPi::DMA::
 is_running (unsigned dma_chan) const
 {
-  return (reg_rbits (dma_chan, DMA_CS, 4));
+  return (reg_rbits (dma_chan, AP::DMA::CS, 4));
 }
 
 void AikaPi::DMA::
 pause (unsigned dma_chan)
 {
-  reg_wbits (dma_chan, DMA_CS, 0, 0);
+  reg_wbits (dma_chan, AP::DMA::CS, 0, 0);
 }
 
 void AikaPi::DMA::
@@ -742,13 +627,13 @@ next_cb (unsigned dma_chan,
 void AikaPi::DMA::
 abort (unsigned dma_chan)
 {
-  reg_wbits (dma_chan, DMA_CS, 1, 30);
+  reg_wbits (dma_chan, AP::DMA::CS, 1, 30);
 }
 
 void AikaPi::DMA::
 run (unsigned dma_chan)
 {
-  reg_wbits (dma_chan, DMA_CS, 1, 0);
+  reg_wbits (dma_chan, AP::DMA::CS, 1, 0);
 }
 
 void AikaPi::DMA::
@@ -1015,7 +900,7 @@ void AikaPi::GPIO::
 func  (unsigned       pin, 
        AP::GPIO::FUNC func_val)
 {
-  volatile uint32_t* gpf_reg = reg (GPFSEL0) + (pin / 10);
+  volatile uint32_t* gpf_reg = reg (AP::GPIO::GPFSEL0) + (pin / 10);
   unsigned shift = (pin % 10) * 3;
 
   wbits (gpf_reg, static_cast<uint32_t>(func_val), shift, 0x7);
@@ -1070,7 +955,7 @@ read (unsigned pin)
 
 AikaPi::AUX::SPI:: 
 SPI (bool channel, AUX* aux)
-  : channel (channel), aux (aux)
+  : m_channel (channel), m_aux (aux)
 {
   init ();
 }
@@ -1083,7 +968,7 @@ uint32_t AikaPi::AUX::SPI::
 off (uint32_t offset) const
 {
   uint32_t chan_offset = offset + 
-    (channel ? AP::AUX::SPI::SPI1_BASE : AP::AUX::SPI::SPI0_BASE);
+    (m_channel ? AP::AUX::SPI::SPI1_BASE : AP::AUX::SPI::SPI0_BASE);
 
   return (chan_offset);
 }
@@ -1091,60 +976,99 @@ off (uint32_t offset) const
 bool AikaPi::AUX::SPI:: 
 is_rx_fifo_empty () const
 {
-  return (aux->reg_rbits (off (AP::AUX::SPI::STAT_REG), 2));
+  return (m_aux->reg_rbits (off (AP::AUX::SPI::STAT_REG), 2));
 }
 
 void AikaPi::AUX::SPI:: 
 init ()
 {
-  gpio.set (AP::RPI::PIN::AUX::SPI1::SCLK, AP::GPIO::FUNC::ALT4, AP::GPIO::PULL::OFF);
-  gpio.set (AP::RPI::PIN::AUX::SPI1::MOSI, AP::GPIO::FUNC::ALT4, AP::GPIO::PULL::OFF);
-  gpio.set (AP::RPI::PIN::AUX::SPI1::MISO, AP::GPIO::FUNC::ALT4, AP::GPIO::PULL::DOWN);
-  gpio.set (AP::RPI::PIN::AUX::SPI1::CE0,  AP::GPIO::FUNC::ALT4, AP::GPIO::PULL::OFF);
-  gpio.set (AP::RPI::PIN::AUX::SPI1::CE1,  AP::GPIO::FUNC::ALT4, AP::GPIO::PULL::OFF);
-  gpio.set (AP::RPI::PIN::AUX::SPI1::CE2,  AP::GPIO::FUNC::ALT4, AP::GPIO::PULL::OFF);
+  gpio.set (AP::RPI::PIN::AUX::SPI1::SCLK, AP::GPIO::FUNC::ALT4,  AP::GPIO::PULL::OFF);
+  gpio.set (AP::RPI::PIN::AUX::SPI1::MOSI, AP::GPIO::FUNC::ALT4,  AP::GPIO::PULL::OFF);
+  gpio.set (AP::RPI::PIN::AUX::SPI1::MISO, AP::GPIO::FUNC::ALT4,  AP::GPIO::PULL::DOWN);
 
+  gpio.set (AP::RPI::PIN::AUX::SPI1::CE0,  AP::GPIO::FUNC::OUTPUT, AP::GPIO::PULL::OFF, !m_cs_polarity);
+  gpio.set (AP::RPI::PIN::AUX::SPI1::CE1,  AP::GPIO::FUNC::OUTPUT, AP::GPIO::PULL::OFF, !m_cs_polarity);
+  gpio.set (AP::RPI::PIN::AUX::SPI1::CE2,  AP::GPIO::FUNC::OUTPUT, AP::GPIO::PULL::OFF, !m_cs_polarity);
+
+  // load default settings
   enable                  ();
-  shift_length            (8);
-  shift_out_ms_bit_first  (true);
-  mode                    (0);
-  chip_selects            (3);
-  frequency               (100'000);
   clear_fifos             ();
+  mode                    (AP::SPI::MODE::_0);  
+  shift_out_ms_bit_first  (true);
+  shift_in_ms_bit_first   (true);
+  chip_selects            (3);
+  frequency               (1'000'000);
+  clear_fifos             ();
+  shift_length            (8);
+}
+
+unsigned AikaPi::AUX::SPI::
+cs_pin (unsigned cs)
+{
+  switch (cs)
+  {
+    case 0:
+      return (AP::RPI::PIN::AUX::SPI1::CE0);
+      break; 
+    
+    case 1:
+      return (AP::RPI::PIN::AUX::SPI1::CE1);
+      break;
+
+    default:
+      return (AP::RPI::PIN::AUX::SPI1::CE2);
+      break;
+  }
+}
+
+bool AikaPi::AUX::SPI::
+busy ()
+{
+  return (m_aux->reg_rbits (off (AP::AUX::SPI::STAT_REG), 6));
 }
 
 void AikaPi::AUX::SPI:: 
 enable ()
 {
-  aux->reg_wbits (off (AP::AUX::SPI::CNTL0_REG), 1, 11);
+  m_aux->reg_wbits (off (AP::AUX::SPI::CNTL0_REG), 1, 11);
 }
 
 void AikaPi::AUX::SPI:: 
 disable ()
 {
-  aux->reg_wbits (off (AP::AUX::SPI::CNTL0_REG), 0, 11);
+  m_aux->reg_wbits (off (AP::AUX::SPI::CNTL0_REG), 0, 11);
 }
 
 void AikaPi::AUX::SPI:: 
-shift_length (uint8_t value)
+shift_length (uint8_t bits)
 {
-  aux->reg_wbits (off (AP::AUX::SPI::CNTL0_REG), value, 0, 6);
+  m_aux->reg_wbits (off (AP::AUX::SPI::CNTL0_REG), bits, 0, 6);
 }
 
 void AikaPi::AUX::SPI:: 
 shift_out_ms_bit_first (bool value)
 {
-  aux->reg_wbits (off (AP::AUX::SPI::CNTL0_REG), value, 6);
+  m_aux->reg_wbits (off (AP::AUX::SPI::CNTL0_REG), value, 6);
+}
+
+void AikaPi::AUX::SPI::
+shift_in_ms_bit_first (bool value)
+{
+  m_aux->reg_wbits (off (AP::AUX::SPI::CNTL1_REG), value, 1);
 }
 
 void AikaPi::AUX::SPI:: 
-mode (unsigned mode)
+mode (AP::SPI::MODE mode)
 {
   switch (mode)
   {
     // https://www.analog.com/en/analog-dialogue/articles/introduction-to-spi-interface.html
+    // 0: CS polarity low, data sampled rising, shifted out falling
+    // 1: CS polarity low, data sampled falling, shifted out rising
+    // 2: CS polarity high, data sampled rising, shifted out falling
+    // 3: CS polarity high, data sampled faling, shifted out rising
 
-    case 0:
+    case AP::SPI::MODE::_0:
     {
       clock_polarity  (0);
       in_rising       (1);
@@ -1153,7 +1077,7 @@ mode (unsigned mode)
       break;
     }
 
-    case 1:
+    case AP::SPI::MODE::_1:
     {
       clock_polarity  (0);
       in_rising       (0);
@@ -1162,7 +1086,7 @@ mode (unsigned mode)
       break;
     }
     
-    case 2:
+    case AP::SPI::MODE::_2:
     {
       clock_polarity  (1);
       in_rising       (1);
@@ -1171,7 +1095,7 @@ mode (unsigned mode)
       break;
     }
 
-    case 3:
+    case AP::SPI::MODE::_3:
     { 
       clock_polarity  (1);
       in_rising       (0);
@@ -1179,79 +1103,182 @@ mode (unsigned mode)
 
       break;
     }
-
-    default:
-    {
-      throw (std::runtime_error ("Invalid SPI mode."));
-    }
   }
 }
 
 void AikaPi::AUX::SPI:: 
 clock_polarity (bool value)
 {
-  aux->reg_wbits (off (AP::AUX::SPI::CNTL0_REG), value, 7);
+  m_aux->reg_wbits (off (AP::AUX::SPI::CNTL0_REG), value, 7);
 }
 
 void AikaPi::AUX::SPI:: 
 in_rising (bool value)
 {
-  aux->reg_wbits (off (AP::AUX::SPI::CNTL0_REG), value, 10);
+  m_aux->reg_wbits (off (AP::AUX::SPI::CNTL0_REG), value, 10);
 }
 
 void AikaPi::AUX::SPI:: 
 out_rising (bool value)
 {
-  aux->reg_wbits (off (AP::AUX::SPI::CNTL0_REG), value, 8);
+  m_aux->reg_wbits (off (AP::AUX::SPI::CNTL0_REG), value, 8);
 }
 
 void AikaPi::AUX::SPI:: 
 chip_selects (uint8_t value)
 {
-  aux->reg_wbits (off (AP::AUX::SPI::CNTL0_REG), value, 17, 3);
+  m_aux->reg_wbits (off (AP::AUX::SPI::CNTL0_REG), value, 17, 3);
+}
+
+bool AikaPi::AUX::SPI::
+rx_empty ()
+{
+  return (m_aux->reg_rbits (off (AP::AUX::SPI::STAT_REG), 7));
+}
+
+bool AikaPi::AUX::SPI::
+tx_full ()
+{
+  return (m_aux->reg_rbits (off (AP::AUX::SPI::STAT_REG), 10));
+}
+
+uint32_t AikaPi::AUX::SPI::
+tx_bits (char*    txd,
+         unsigned position)
+{
+  uint32_t bits = 0;
+
+  if (shift_length () <= 8)
+  {
+    bits = *((( uint8_t*)(txd)) + position);
+  }
+  else if (shift_length () <= 16)
+  {
+    bits = *(((uint16_t*)(txd)) + position);
+  }
+  else 
+  {
+    bits = *(((uint32_t*)(txd)) + position);
+  }
+
+  if (shift_out_ms_bit_first ())
+  {
+    bits <<= (32 - shift_length ());
+  }
+
+  return (bits);
+}
+
+void AikaPi::AUX::SPI:: 
+rx_bits (char*    rxd,
+         unsigned position)
+{
+  uint32_t bits = *(m_aux->reg (off (AP::AUX::SPI::IO_REG)));
+
+  if (!shift_in_ms_bit_first ())
+  {
+    bits >>= (32 - shift_length ());
+  }
+
+  if (shift_length () <= 8)
+  {
+    *((( uint8_t*)(rxd)) + position) = bits;
+  }
+  else if (shift_length () <= 16)
+  {
+    *(((uint16_t*)(rxd)) + position) = bits;
+  }
+  else 
+  {
+    *(((uint32_t*)(rxd)) + position) = bits;
+  }
+}
+
+uint32_t AikaPi::AUX::SPI:: 
+shift_length ()
+{
+  return (m_aux->reg_rbits (off (AP::AUX::SPI::CNTL0_REG), 0, 0x3F));
 }
 
 void AikaPi::AUX::SPI:: 
 frequency (double value)
 {
-  uint16_t divider = static_cast<uint16_t>((static_cast<double>(AP::RPI::CLOCK_HZ) /
-    (2.0 * value)) - 1) & 0x0fff;
+  uint16_t divider = ((AP::RPI::CLOCK_HZ / (value * 2))) - 1;
+  divider &= 0x0FFF;
 
-  aux->reg_wbits (off (AP::AUX::SPI::CNTL0_REG), divider, 20, 12);
+  m_aux->reg_wbits (off (AP::AUX::SPI::CNTL0_REG), divider, 20, 12);
 }
 
 void AikaPi::AUX::SPI:: 
 clear_fifos ()
 {
-  aux->reg_wbits (off (AP::AUX::SPI::CNTL0_REG), 1, 9);
+  m_aux->reg_wbits (off (AP::AUX::SPI::CNTL0_REG), 1, 9);
 
-  // small delay?
-  std::this_thread::sleep_for (std::chrono::duration <double, std::micro> (100));
+  std::this_thread::sleep_for (std::chrono::microseconds (10));
 
-  aux->reg_wbits (off (AP::AUX::SPI::CNTL0_REG), 0, 9);
+  m_aux->reg_wbits (off (AP::AUX::SPI::CNTL0_REG), 0, 9);
 }
 
+/**
+ *  @param length number of bytes to read/write
+ */
 void AikaPi::AUX::SPI:: 
 xfer (char*     rxd, 
       char*     txd, 
       unsigned  length)
 {
-  while (length--)
+  unsigned  txCount = 0,
+            rxCount = 0;
+
+  // correct word count size
+  if (shift_length () > 8)
   {
-    // assert CE pin ?
+    length /= 2;
 
-    uint32_t txdata = *(txd++);
-
-    // write
-    aux->reg (off (AP::AUX::SPI::IO_REG), txdata);
-
-    // wait until 1 byte is received
-    while (is_rx_fifo_empty ());
-
-    *(rxd++) = *(aux->reg (off (AP::AUX::SPI::IO_REG)));
-
-    // deassert CE pin ?
+    if (shift_length () > 16)
+    {
+      length /= 2;
+    }
   }
+
+  gpio.write (cs_pin (m_cs), m_cs_polarity);         
+
+  while ((txCount < length) || (rxCount < length))
+  {
+    if (rxCount < length)
+    {
+      if (!rx_empty ())
+      {
+        rx_bits (rxd, rxCount++);
+      }
+    }
+
+    if (txCount < length)
+    {
+      if (!tx_full ())
+      {
+        if (txCount != (length - 1))
+        {
+          m_aux->reg (off (AP::AUX::SPI::TXHOLD_REG), tx_bits (txd, txCount++));
+        }
+        else 
+        {
+          m_aux->reg (off (AP::AUX::SPI::IO_REG), tx_bits (txd, txCount++));
+        }
+      }
+    }
+  }
+
+  while (busy ());
+
+  gpio.write (cs_pin (m_cs), !m_cs_polarity);
+}
+
+void AikaPi::AUX::SPI::
+xfer (char* rxd, char* txd, unsigned length, unsigned cs_pin)
+{
+  cs    (cs_pin);
+  xfer  (rxd, txd, length);
 }
 
 void AikaPi::AUX::SPI:: 
@@ -1272,19 +1299,54 @@ write (char*    txd,
   xfer (rxd, txd, length);
 } 
 
+bool AikaPi::AUX::SPI::
+cpol ()
+{
+ return (m_aux->reg_rbits (off (AP::AUX::SPI::CNTL0_REG), 7));
+}
+
+void AikaPi::AUX::SPI::
+cs_polarity (bool value)
+{
+  m_cs_polarity = value;
+}
+
+void AikaPi::AUX::SPI::
+cs (unsigned cs_pin)
+{
+  if (cs_pin <= 2 && cs_pin >= 0)
+  {
+    m_cs = cs_pin;
+  }
+  else 
+  {
+    throw (std::runtime_error ("Invalid aux SPI CS pin!"));
+  }
+}
+
+bool AikaPi::AUX::SPI::
+shift_out_ms_bit_first ()
+{
+  return (m_aux->reg_rbits (off (AP::AUX::SPI::CNTL0_REG), 6));
+}
+
+bool AikaPi::AUX::SPI::
+shift_in_ms_bit_first ()
+{
+  return (m_aux->reg_rbits (off (AP::AUX::SPI::CNTL1_REG), 1));
+}
+
 AikaPi::AUX::
 AUX (void* phys_addr) : Peripheral (phys_addr),
   m_spi {SPI (0, this), SPI (1, this)}
 {
-
+  init ();
 }
 
 void AikaPi::AUX::
 init ()
 {
   master_enable_spi (0);
-  master_enable_spi (1);
-
 }
 
 AikaPi::AUX::SPI& AikaPi::AUX:: 
@@ -1559,6 +1621,23 @@ low () const
   return (*(reg (AP::SYSTIMER::CLO)));
 }
 
+AikaPi::Utility:: 
+Utility ()
+{
+
+}
+
+constexpr double AikaPi::Utility:: 
+normalize (double input_val,
+           double input_min, 
+           double input_max, 
+           double output_min, 
+           double output_max)
+{
+  return (((input_val - input_min) / (input_max - input_min)) * 
+    (output_max - output_min) + output_min);
+}
+
 AikaPi::SPI_BB:: 
 SPI_BB (unsigned CS, unsigned MISO, unsigned MOSI, unsigned SCLK, double baud, AP::SPI::MODE i_mode)
   : m_CS (CS), m_MISO (MISO), m_MOSI (MOSI), m_SCLK (SCLK), m_baud (baud), m_mode (i_mode)
@@ -1774,20 +1853,17 @@ baud (double value)
 }
 
 void AikaPi::SPI_BB:: 
-shift_out_msb_first (bool value)
+shift_out_ms_bit_first (bool value)
 {
   m_shift_out_ms_bit_first = value;
 }
 
 void AikaPi::SPI_BB:: 
-receive_msb_first (bool value)
+receive_ms_bit_first (bool value)
 {
   m_receive_ms_bit_first = value;
 }
 
-/**
- * @brief Set chip select pin asserted logic level 
- */
 void AikaPi::SPI_BB::
 cs_polarity (bool value)
 {

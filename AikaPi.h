@@ -64,44 +64,6 @@ constexpr uint32_t DMA_TI_DEST_DREQ   = 1 << 6;
 constexpr uint32_t DMA_TI_DEST_INC    = 1 << 4;
 constexpr uint32_t DMA_TI_WAIT_RESP   = 1 << 3;
 
-// DMA control block macros
-#define REG(r, a)       REG_BUS_ADDR(r, a)
-#define MEM(m, a)       MEM_BUS_ADDR(m, a)
-#define CBS(n)          MEM_BUS_ADDR(mp, &dp->cbs[(n)])
-
-// DMA channels and data requests
-#define DMA_PWM_DREQ    5
-#define DMA_SPI_TX_DREQ 6
-#define DMA_SPI_RX_DREQ 7
-
-
-
-
-// DMA register addresses offset by 0x100 * chan_num
-constexpr uint32_t DMA_CONBLK_AD = 0x04;
-constexpr uint32_t DMA_CS        = 0x00;
-constexpr uint32_t DMA_TI        = 0x08;
-constexpr uint32_t DMA_SRCE_AD   = 0x0c;
-constexpr uint32_t DMA_DEST_AD   = 0x10;
-constexpr uint32_t DMA_TXFR_LEN  = 0x14;
-constexpr uint32_t DMA_STRIDE    = 0x18;
-constexpr uint32_t DMA_NEXTCONBK = 0x1c;
-constexpr uint32_t DMA_DEBUG     = 0x20;
-#define DMA_REG(ch, r)  ((r) == DMA_ENABLE ? DMA_ENABLE : (ch) * 0x100 + (r))
-#define DMA_ENABLE      0xff0
-
-// DMA register values
-#define DMA_WAIT_RESP   (1 << 3)
-#define DMA_CB_DEST_INC (1 << 4)
-#define DMA_DEST_DREQ   (1 << 6)
-#define DMA_CB_SRCE_INC (1 << 8)
-#define DMA_SRCE_DREQ   (1 << 10)
-#define DMA_PRIORITY(n) ((n) << 16)
-
-
-
-
-
 // --- Clock Manager (PCM & PWM Clocks)---
 // https://www.scribd.com/doc/127599939/BCM2835-Audio-clocks
 
@@ -112,67 +74,8 @@ constexpr uint32_t CM_PCMDIV  = 0x9c;
 constexpr uint32_t CM_PWMDIV  = 0xa4;
 constexpr uint32_t CM_PASSWD  = (0x5a << 24);
 
-/*
-  Clock Sources and their Frequencies
-  https://raspberrypi.stackexchange.com/questions/1153/what-are-the-different-clock-sources-for-the-general-purpose-clocks
-
-  0     0 Hz     Ground
-  1     19.2 MHz oscillator
-  2     0 Hz     testdebug0
-  3     0 Hz     testdebug1
-  4     0 Hz     PLLA
-  5     1000 MHz PLLC (changes with overclock settings)
-  6     500 MHz  PLLD
-  7     216 MHz  HDMI auxiliary
-  8-15  0 Hz     Ground
-*/
-enum AP_CM_CLK_SRC
-{
-  AP_CM_CLK_SRC_GND             = 0,
-  AP_CM_CLK_SRC_OSCILLATOR      = 1,
-  AP_CM_CLK_SRC_TESTDEBUG0      = 2,
-  AP_CM_CLK_SRC_TESTDEBUG1      = 3,
-  AP_CM_CLK_SRC_PLLA            = 4,
-  AP_CM_CLK_SRC_PLLC            = 5,
-  AP_CM_CLK_SRC_PLLD            = 6,
-  AP_CM_CLK_SRC_HDMI_AUXILIARY  = 7
-};
-
-// const std::map <AP_CM_CLK_SRC, double> AP_CM_CLK_SRC_FREQ =
-// {
-//   {AP_CM_CLK_SRC_GND,             0.0},
-//   {AP_CM_CLK_SRC_OSCILLATOR,      19'200'000.0},
-//   {AP_CM_CLK_SRC_TESTDEBUG0,      0.0},
-//   {AP_CM_CLK_SRC_TESTDEBUG1,      0.0},
-//   {AP_CM_CLK_SRC_PLLA,            0.0},
-//   {AP_CM_CLK_SRC_PLLC,            1'000'000'000.0},
-//   {AP_CM_CLK_SRC_PLLD,            500'000'000.0},
-//   {AP_CM_CLK_SRC_HDMI_AUXILIARY,  216'000'000.0},
-// };
-
-enum AP_CM_CLK_MASH
-{
-  AP_CM_CLK_MASH_INTEGER = 0,
-  AP_CM_CLK_MASH_1STAGE  = 1,
-  AP_CM_CLK_MASH_2STAGE  = 2,
-  AP_CM_CLK_MASH_3STAGE  = 3
-};
-
-constexpr AP_CM_CLK_SRC   AP_CM_PWM_CLK_SRC   = AP_CM_CLK_SRC_PLLD;
-constexpr AP_CM_CLK_MASH  AP_CM_PWM_CLK_MASH  = AP_CM_CLK_MASH_1STAGE;  
-
-
-
 // --- General Raspberry Pi ---
 constexpr int PI_MAX_USER_GPIO  = 31;
-
-// --- ADC ---
-// ADC and DAC chip-enables
-constexpr int SPI_CS_CS = 0;
-constexpr int DAC_CE_NUM = 1;
-
-// --- SPI ---
-// Page 148
 
 // SPI 0 pin definitions
 constexpr uint32_t SPI0_CE0_PIN   = 8;
@@ -217,42 +120,6 @@ constexpr uint32_t AUX_SPI0_TXHOLD_REG = 0xB0;
 
 constexpr uint32_t AUX_SPI1_ENABLE     = (1 << 1); 
 
-// --- GPIO --- 
-constexpr uint32_t GPIO_BASE       = (PHYS_REG_BASE + 0x200000);
-constexpr uint32_t GPIO_MODE0      = 0x00;
-constexpr uint32_t GPSET0          = 0x1C;
-constexpr uint32_t GPCLR0          = 0x28;
-constexpr uint32_t GPIO_LEV0       = 0x34;
-constexpr uint32_t GPIO_GPPUD      = 0x94;
-constexpr uint32_t GPIO_GPPUDCLK0  = 0x98;
-
-constexpr uint32_t GPIO_GPFSEL0    = 0x00;
-constexpr uint32_t GPIO_GPSET0     = 0x1C;
-constexpr uint32_t GPIO_GPCLR0     = 0x28;
-constexpr uint32_t GPIO_GPLEV0     = 0x34;
-constexpr uint32_t GPIO_GPEDS0     = 0x40;
-constexpr uint32_t GPIO_GPREN0     = 0x4C;
-constexpr uint32_t GPIO_GPFEN0     = 0x58;
-
-enum AP_GPIO_FUNC
-{
-  AP_GPIO_FUNC_INPUT  = 0,
-  AP_GPIO_FUNC_OUTPUT = 1,
-  AP_GPIO_FUNC_ALT0   = 4,
-  AP_GPIO_FUNC_ALT1   = 5,
-  AP_GPIO_FUNC_ALT2   = 6,
-  AP_GPIO_FUNC_ALT3   = 7,
-  AP_GPIO_FUNC_ALT4   = 3,
-  AP_GPIO_FUNC_ALT5   = 2
-};
-
-enum AP_GPIO_PULL
-{
-  AP_GPIO_PULL_OFF      = 0,
-  AP_GPIO_PULL_DOWN     = 1,
-  AP_GPIO_PULL_UP       = 2,
-  AP_GPIO_PULL_RESERVED = 3
-};
 
 // --- Microsecond Timer ---
 // Page 172
@@ -289,33 +156,9 @@ enum MAILBOX_ALLOCATE_MEMORY_FLAGS
 // VC flags for unchached DMA memory
 #define DMA_MEM_FLAGS static_cast<MAILBOX_ALLOCATE_MEMORY_FLAGS>((MEM_COHERENT | MEM_ZERO))
 
-// --- GPIO Registers ---
-constexpr int GPFSEL0 = 0x0;
-
-// --- Memory ---
-// Structure for mapped peripheral or memory
-
-
-// Size of memory page
-constexpr unsigned PAGE_SIZE = 0x1000;
-
-// Round up to nearest page
-#define PAGE_ROUNDUP(n) ((n) % PAGE_SIZE == 0 ? (n) : ((n) + PAGE_SIZE) & ~(PAGE_SIZE - 1))
-
-
 
 constexpr double AP_PWM_CLK_SRC_FREQ = 100'000'000.0;
 constexpr double PWM_VALUE = 2.0;
-
-constexpr int PWM_BASE  = (PHYS_REG_BASE + 0x20C000);
-constexpr int PWM_CTL   = 0x00;   // Control
-constexpr int PWM_STA   = 0x04;   // Status
-constexpr int PWM_DMAC  = 0x08;   // DMA control
-constexpr int PWM_RNG1  = 0x10;   // Channel 1 range
-constexpr int PWM_DAT1  = 0x14;   // Channel 1 data
-constexpr int PWM_FIF1  = 0x18;   // Channel 1 fifo
-constexpr int PWM_RNG2  = 0x20;   // Channel 2 range
-constexpr int PWM_DAT2  = 0x24;   // Channel 2 data
 
 // PWM register values
 constexpr int PWM_CTL_RPTL1 = (1 << 2);  // Chan 1: repeat last data when FIFO empty
@@ -323,135 +166,6 @@ constexpr int PWM_CTL_USEF1 = (1 << 5);  // Chan 1: use FIFO
 constexpr int PWM_DMAC_ENAB = (1 << 31); // Start PWM DMA
 constexpr int PWM_ENAB      = 1;         // Enable PWM
 constexpr int PWM_PIN       = 12;        // GPIO pin for PWM output // this was set to 18 before
-
-// If non-zero, set PWM clock using VideoCore mailbox
-constexpr int USE_VC_CLOCK_SET = 0;
-
-// --- Helper Macros for Register Access ---
-// Get virtual 8 and 32-bit pointers to register
-#define REG8(m, x)          ((volatile uint8_t *)  ((uint32_t)(m.virt) + (uint32_t)(x)))
-#define REG32(m, x)         ((volatile uint32_t *) ((uint32_t)(m.virt) + (uint32_t)(x)))
-
-// Get bus address of register
-#define REG_BUS_ADDR(m, x)  ((uint32_t)(m.bus)  + (uint32_t)(x))
-
-// Convert uncached memory virtual address to bus address
-#define MEM_BUS_ADDR(mp, a) ((uint32_t)a - (uint32_t)mp->virt + (uint32_t)mp->bus)
-
-// Convert bus address to physical address (for mmap)
-#define BUS_PHYS_ADDR(a)    ((void *)((uint32_t)(a) & ~0xC0000000))
-
-// --- Enums ---
-
-enum MAILBOX_TAG
-{
-  // https://github.com/raspberrypi/firmware/wiki/Mailbox-property-interface#get-vc-memory
-
-  MAILBOX_TAG_ALLOCATE_MEMORY = 0x3000C,
-  MAILBOX_TAG_LOCK_MEMORY     = 0x3000D,
-};
-
-enum PIN_INFO_MODE
-{
-  PIN_INFO_MODE_NONE,
-  PIN_INFO_MODE_SERIAL,
-  PIN_INFO_MODE_I2C_SDA,
-  PIN_INFO_MODE_I2C_SCL,
-  PIN_INFO_MODE_SPI_SCLK,
-  PIN_INFO_MODE_SPI_MISO,
-  PIN_INFO_MODE_SPI_MOSI,
-  PIN_INFO_MODE_SPI_CS
-};
-
-enum BB_SPI_FLAG
-{
-  BB_SPI_FLAG_CPHA    = 0,
-  BB_SPI_FLAG_CPOL    = 1,
-  BB_SPI_FLAG_CSPOL   = 2,
-  BB_SPI_FLAG_TX_LSB  = 14,
-  BB_SPI_FLAG_RX_LSB  = 15
-};
-
-enum PWM_CHANNEL_MODE
-{
-  PWM_CHANNEL_MODE_PWM = 0,
-  PWM_CHANNEL_MODE_SERIALISER = 1
-};
-
-
-// --- Structs ---
-typedef struct
-{
-
-} Pin_Info_Serial;
-
-typedef struct
-{
-      
-} Pin_Info_I2C;
-
-typedef struct
-{
-  unsigned  CS,
-            MISO,
-            MOSI,
-            SCLK;
-  
-  unsigned  usage,
-            delay;
-
-  unsigned  spi_flags,
-            MISO_mode,
-            MOSI_mode,
-            CS_mode,
-            SCLK_mode;
-
-} Pin_Info_SPI;
-
-typedef struct 
-{
-  int       mode;
-  int       gpio;
-  uint32_t  baud;
-
-  union 
-  {
-    Pin_Info_Serial serial;
-    Pin_Info_I2C    i2c;
-    Pin_Info_SPI    spi;
-  };
-
-} Pin_Info;
-
-typedef struct 
-{
-  int fd,     // File descriptor
-      h,      // Memory handle
-      size;   // Memory size in bytes
-    
-  void *bus,  // Bus address
-       *virt, // Virtual address
-       *phys; // Physical address
-  
-  // Software directly accessing peripherals using the DMA engines must use bus addresses
-  // Software accessing RAM directly must use physical addresses
-  // Software accessing RAM using DMA engines must use bus addresses
-} AP_MemoryMap;
-
-class Utility 
-{
-  public:
-    static volatile uint32_t* reg                 (const AP_MemoryMap& mem_map, uint32_t offset);
-    static          uint32_t  bus                 (const AP_MemoryMap& mem_map, uint32_t offset);
-    static          uint32_t  bus                 (const AP_MemoryMap& mem_map, void*    offset);  
-    static          uint32_t  bus                 (const AP_MemoryMap& mem_map, volatile void* offset);  
-    static          uint32_t  dma_chan_reg_offset (uint32_t dma_channel,  uint32_t dma_offset);
-    static          void      disp_reg_virt       (const AP_MemoryMap& mem_map, uint32_t offset);
-    static          void      disp_bit32          (uint32_t bits);
-    static          void      write_reg_virt      (volatile uint32_t* reg, uint32_t value, uint32_t mask, uint32_t shift);
-    static          void      write_reg_virt      (AP_MemoryMap& mem_map, uint32_t offset, uint32_t value, uint32_t mask, uint32_t shift);
-    static          uint32_t  get_bits            (uint32_t input, uint32_t shift, uint32_t mask);  
-};
 
 namespace AP
 {
@@ -528,13 +242,14 @@ namespace AP
 
     namespace SPI
     {
-      constexpr uint32_t SPI0_BASE = 0x080;
-      constexpr uint32_t SPI1_BASE = 0x0C0;
-      constexpr uint32_t CNTL0_REG = 0x00;
-      constexpr uint32_t CNTL1_REG = 0x04;
-      constexpr uint32_t STAT_REG  = 0x08;
-      constexpr uint32_t IO_REG    = 0x10;
-      constexpr uint32_t PEEK_REG  = 0x14;
+      constexpr uint32_t SPI0_BASE  = 0x080;
+      constexpr uint32_t SPI1_BASE  = 0x0C0;
+      constexpr uint32_t CNTL0_REG  = 0x00;
+      constexpr uint32_t CNTL1_REG  = 0x04;
+      constexpr uint32_t STAT_REG   = 0x08;
+      constexpr uint32_t PEEK_REG   = 0x0C;
+      constexpr uint32_t IO_REG     = 0x20;
+      constexpr uint32_t TXHOLD_REG = 0x30;
     };
   };
 
@@ -618,8 +333,8 @@ namespace AP
              constexpr uint32_t SRC_INC   = 1 << 8;
              constexpr uint32_t DEST_DREQ = 1 << 6;
              constexpr uint32_t DEST_INC  = 1 << 4;
-             constexpr uint32_t WAIT_RESP = 1 << 3;
-             constexpr uint32_t INTEN     = 1 << 0;
+             constexpr uint32_t WAIT_RESP = 1 << 3; // wait for a response
+             constexpr uint32_t INTEN     = 1 << 0; // interrupt enable
 
     };
 
@@ -805,7 +520,7 @@ namespace AP
 class AikaPi
 {
   private:
-        class Mailbox
+    class Mailbox
     {
       // https://github.com/raspberrypi/firmware/wiki/Mailbox-property-interface
 
@@ -992,31 +707,47 @@ class AikaPi
         class SPI
         {
            private:
-            bool channel  = 0;
-            AUX* aux      = nullptr;
+            bool      m_channel     = 0;
+            bool      m_cs_polarity = 0;
+            unsigned  m_cs          = 0;
+            AUX*      m_aux         = nullptr;
 
           private:
-            uint32_t off (uint32_t offset) const;
-          
+            void      init              ();
+            unsigned  cs_pin            (unsigned cs);
+            bool      busy              ();
+            void      in_rising         (bool value);
+            void      out_rising        (bool balue);
+            void      clock_polarity    (bool value);
+            bool      cpol              ();
+            bool      is_rx_fifo_empty  () const;
+            void      chip_selects      (uint8_t value);
+            bool      rx_empty          ();
+            bool      tx_full           ();
+            uint32_t  tx_bits           (char* txd, unsigned position);
+            void      rx_bits           (char* rxd, unsigned position);
+            uint32_t  shift_length      ();
+            
           public:
             SPI (bool channel, AUX* aux);
-
-            bool is_rx_fifo_empty       () const;
-            void init                   ();
-            void enable                 ();
-            void disable                ();
-            void shift_length           (uint8_t value);
-            void shift_out_ms_bit_first (bool value);
-            void mode                   (unsigned mode);
-            void clock_polarity         (bool value);
-            void in_rising              (bool value);
-            void out_rising             (bool balue);
-            void chip_selects           (uint8_t value);
-            void frequency              (double value);
-            void clear_fifos            ();
-            void xfer                   (char* rxd, char* txd, unsigned length);
-            void read                   (char* rxd, unsigned length);
-            void write                  (char* txd, unsigned length);
+            
+            uint32_t  off                     (uint32_t offset) const;
+            void      enable                  ();
+            void      disable                 ();
+            void      shift_length            (uint8_t bits);
+            void      shift_out_ms_bit_first  (bool value);
+            void      shift_in_ms_bit_first   (bool value);
+            void      mode                    (AP::SPI::MODE mode);
+            void      frequency               (double value);
+            void      clear_fifos             ();
+            void      xfer                    (char* rxd, char* txd, unsigned length);
+            void      xfer                    (char* rxd, char* txd, unsigned length, unsigned cs_pin);
+            void      read                    (char* rxd, unsigned length);
+            void      write                   (char* txd, unsigned length);
+            void      cs_polarity             (bool value);
+            void      cs                      (unsigned cs_pin);
+            bool      shift_out_ms_bit_first  ();
+            bool      shift_in_ms_bit_first   ();
         };
 
       private:
@@ -1093,8 +824,15 @@ class AikaPi
        uint32_t low () const;
     };
 
-
   public: 
+    class Utility
+    {
+      public:
+        Utility ();
+
+        static constexpr double normalize (double input_val, double input_min, double input_max, double output_min, double output_max);
+    };
+
     class Uncached : public Peripheral
     {
       public: 
@@ -1142,13 +880,13 @@ class AikaPi
         SPI_BB (unsigned CS, unsigned MISO, unsigned MOSI, unsigned SCLK, double baud, AP::SPI::MODE i_mode = AP::SPI::MODE::_0);
        ~SPI_BB ();
 
-        void mode                 (AP::SPI::MODE value);
-        void baud                 (double value);
-        void shift_out_msb_first  (bool value);
-        void receive_msb_first    (bool value);
-        void cs_polarity          (bool value);
-        void xfer                 (char* rxd, char* txd, unsigned length);
-        void write                (char* txd, unsigned length);
+        void mode                   (AP::SPI::MODE value);
+        void baud                   (double value);
+        void shift_out_ms_bit_first (bool value);
+        void receive_ms_bit_first   (bool value);
+        void cs_polarity            (bool value);
+        void xfer                   (char* rxd, char* txd, unsigned length);
+        void write                  (char* txd, unsigned length);
     };
 
   public:
@@ -1159,6 +897,7 @@ class AikaPi
     static AUX          aux;
     static ClockManager cm;
     static SystemTimer  st;
+    static Utility      util;
   
   public:
     AikaPi ();
