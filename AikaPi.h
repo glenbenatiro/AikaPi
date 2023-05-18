@@ -3,169 +3,10 @@
 
 #include <cstdint>
 
-// Link to the BCM2385 datasheet:
-// // https://www.raspberrypi.org/app/uploads/2012/02/BCM2835-ARM-Peripherals.pdf
+// BCM2385 datasheet:
+// https://www.raspberrypi.org/app/uploads/2012/02/BCM2835-ARM-Peripherals.pdf
 
 #define RPI_VERSION 0
-
-// btw: The Pi-0 and Pi-3 do "overclock" the base clock up to 400 MHz on load. 
-// And it may cause SPI problems if the clock isn't fixed 
-// (i.e. at 250 MHz with core_freq=250 in /boot/config.txt).
-
-// Location of peripheral registers in physical memory
-// This can be seen on page 5 of ARM BCM2385 document
-constexpr uint32_t PI_01_REG_BASE = 0x20000000; // Pi Zero or 1 
-constexpr uint32_t PI_23_REG_BASE = 0x3F000000; // Pi 2 or 3
-constexpr uint32_t PI_4_REG_BASE  = 0xFE000000; // Pi 4
-
-#if   RPI_VERSION == 0
-  constexpr uint32_t PHYS_REG_BASE  = PI_01_REG_BASE;
-  constexpr uint32_t CLOCK_HZ	      = 250000000;
-//constexpr uint32_t SPI_CLOCK_HZ   = 400000000; // !! https://github.com/raspberrypi/linux/issues/2094 !!
-  constexpr uint32_t SPI_CLOCK_HZ   = 250000000;  // !! https://github.com/raspberrypi/linux/issues/2094 !!
-#elif RPI_VERSION == 1
-  constexpr uint32_t PHYS_REG_BASE  = PI_01_REG_BASE;
-  constexpr uint32_t CLOCK_HZ       = 250000000;
-  constexpr uint32_t SPI_CLOCK_HZ   = 250000000;
-#elif RPI_VERSION == 2 || RPI_VERSION == 3
-  constexpr uint32_t PHYS_REG_BASE  = PI_23_REG_BASE;
-  constexpr uint32_t CLOCK_HZ       = 250000000;
-  constexpr uint32_t SPI_CLOCK_HZ   = 250000000;
-#elif RPI_VERSION == 4
-  constexpr uint32_t PHYS_REG_BASE  = PI_4_REG_BASE;
-  constexpr uint32_t CLOCK_HZ	      = 375000000;
-  constexpr uint32_t SPI_CLOCK_HZ   = 200000000;
-#endif
-
-// Location of peripheral registers in bus memory
-// This can be seen on page 5 of ARM BCM2385 document
-constexpr uint32_t BUS_REG_BASE = 0x7E000000;
-
-// --- DMA ---
-struct AP_DMA_CB
-{
-  uint32_t  ti,       // Transfer information
-            srce_ad,  // Source address
-            dest_ad,  // Destination address
-            tfr_len,  // Transfer length, in bytes
-            stride,   // Transfer stride
-            next_cb,  // Next control block
-            debug,    // Debug register, zero in control block
-            unused;
-} __attribute__ (( aligned(32) ));
-
-constexpr uint32_t DMA_BASE           = (PHYS_REG_BASE + 0x007000);
-constexpr uint32_t DMA_TI_DREQ_PWM    = 5;
-constexpr uint32_t DMA_TI_DREQ_SPI_RX = 7;
-constexpr uint32_t DMA_TI_DREQ_SPI_TX = 6;
-constexpr uint32_t DMA_TI_SRC_DREQ    = 1 << 10;
-constexpr uint32_t DMA_TI_SRC_INC     = 1 << 8;
-constexpr uint32_t DMA_TI_DEST_DREQ   = 1 << 6;
-constexpr uint32_t DMA_TI_DEST_INC    = 1 << 4;
-constexpr uint32_t DMA_TI_WAIT_RESP   = 1 << 3;
-
-// --- Clock Manager (PCM & PWM Clocks)---
-// https://www.scribd.com/doc/127599939/BCM2835-Audio-clocks
-
-constexpr uint32_t CM_BASE    = (PHYS_REG_BASE + 0x101000);
-constexpr uint32_t CM_PCMCTL  = 0x98;
-constexpr uint32_t CM_PWMCTL  = 0xa0;
-constexpr uint32_t CM_PCMDIV  = 0x9c;
-constexpr uint32_t CM_PWMDIV  = 0xa4;
-constexpr uint32_t CM_PASSWD  = (0x5a << 24);
-
-// --- General Raspberry Pi ---
-constexpr int PI_MAX_USER_GPIO  = 31;
-
-// SPI 0 pin definitions
-constexpr uint32_t SPI0_CE0_PIN   = 8;
-constexpr uint32_t SPI0_CE1_PIN   = 7;
-constexpr uint32_t SPI0_MISO_PIN  = 9;
-constexpr uint32_t SPI0_MOSI_PIN  = 10;
-constexpr uint32_t SPI0_SCLK_PIN  = 11;
-
-// SPI registers and constants
-constexpr uint32_t SPI0_BASE  = (PHYS_REG_BASE + 0x204000);
-constexpr uint32_t SPI_CS     = 0x00;
-constexpr uint32_t SPI_FIFO   = 0x04;
-constexpr uint32_t SPI_CLK    = 0x08;
-constexpr uint32_t SPI_DLEN   = 0x0c;
-constexpr uint32_t SPI_LTOH   = 0x10;
-constexpr uint32_t SPI_DC     = 0x14;
-
-constexpr uint32_t SPI_CS_CLEAR     = (3 << 4);
-constexpr uint32_t SPI_RX_FIFO_CLR  = (2 << 4);
-constexpr uint32_t SPI_TX_FIFO_CLR  = (1 << 4);
-constexpr uint32_t SPI_CS_TA        = (1 << 7);
-constexpr uint32_t SPI_CS_DMAEN     = (1 << 8);
-constexpr uint32_t SPI_CS_ADCS      = (1 << 11);
-constexpr uint32_t SPI_RXD          = (1 << 17);
-constexpr uint32_t SPI_CE0          = 0;
-constexpr uint32_t SPI_CE1          = 1;
-
-// --- Auxiliaries---
-constexpr uint32_t SPI1_SCLK_PIN = 21;
-constexpr uint32_t SPI1_MOSI_PIN = 20;
-constexpr uint32_t SPI1_MISO_PIN = 19;
-constexpr uint32_t SPI1_CE2_PIN  = 16;
-
-constexpr uint32_t AUX_BASE            = (PHYS_REG_BASE + 0x215000);
-constexpr uint32_t AUX_ENABLES         = 0x04;
-constexpr uint32_t AUX_SPI0_CNTL0_REG  = 0x80; 
-constexpr uint32_t AUX_SPI0_CNTL1_REG  = 0x84;
-constexpr uint32_t AUX_SPI0_STAT_REG   = 0x88;
-constexpr uint32_t AUX_SPI0_IO_REG     = 0xA0;
-constexpr uint32_t AUX_SPI0_PEEK_REG   = 0x8C;
-constexpr uint32_t AUX_SPI0_TXHOLD_REG = 0xB0;
-
-constexpr uint32_t AUX_SPI1_ENABLE     = (1 << 1); 
-
-
-// --- Microsecond Timer ---
-// Page 172
-constexpr uint32_t AP_ST_BASE = PHYS_REG_BASE + 0x3000;  // Physical address! 
-constexpr uint32_t AP_ST_CLO  = 0x04;
-
-// --- VideoCore Mailbox ---
-// Mailbox command/response structure
-typedef struct 
-{
-  uint32_t len,         // Overall length (bytes)
-           req,         // Zero for request, 1<<31 for response
-           tag,         // Command number
-           blen,        // Buffer length (bytes)
-           dlen,        // Data length (bytes)
-           uints[32-5]; // Data (108 bytes maximum)
-} AP_VC_MSG __attribute__ ((aligned (16)));
-
-// VideoCore Mailbox Allocate Memory Flags
-// https://github.com/raspberrypi/firmware/wiki/Mailbox-property-interface#allocate-memory
-enum MAILBOX_ALLOCATE_MEMORY_FLAGS
-{
-  MEM_DISCARDABLE      = 1 << 0, // can be resized to 0 at any time. Use for cached data
-  MEM_NORMAL           = 0 << 2, // normal allocating alias. Don't use from ARM
-  MEM_DIRECT           = 1 << 2, // 0xC alias uncached
-  MEM_COHERENT         = 2 << 2, // 0x8 alias. Non-allocating in L2 but coherent
-  MEM_ZERO             = 1 << 4, // initialise buffer to all zeros
-  MEM_NO_INIT          = 1 << 5, // don't initialise (default is initialise to all ones)
-  MEM_HINT_PERMALOCK   = 1 << 6, // Likely to be locked for long periods of time
-
-  MEM_L1_NONALLOCATING = (MEM_DIRECT | MEM_COHERENT) // Allocating in L2
-};
-
-// VC flags for unchached DMA memory
-#define DMA_MEM_FLAGS static_cast<MAILBOX_ALLOCATE_MEMORY_FLAGS>((MEM_COHERENT | MEM_ZERO))
-
-
-constexpr double AP_PWM_CLK_SRC_FREQ = 100'000'000.0;
-constexpr double PWM_VALUE = 2.0;
-
-// PWM register values
-constexpr int PWM_CTL_RPTL1 = (1 << 2);  // Chan 1: repeat last data when FIFO empty
-constexpr int PWM_CTL_USEF1 = (1 << 5);  // Chan 1: use FIFO
-constexpr int PWM_DMAC_ENAB = (1 << 31); // Start PWM DMA
-constexpr int PWM_ENAB      = 1;         // Enable PWM
-constexpr int PWM_PIN       = 12;        // GPIO pin for PWM output // this was set to 18 before
 
 namespace AP
 {
@@ -201,6 +42,9 @@ namespace AP
       static constexpr double   SPI_CLOCK_HZ  = 200'000'000;
     #endif
 
+    constexpr uint32_t BUS_REG_BASE = 0x7E000000;
+    constexpr uint32_t PAGE_SIZE    = 0x1000;
+
     namespace PIN
     {
       namespace AUX
@@ -231,8 +75,6 @@ namespace AP
         constexpr unsigned CE1  = 7;
       };
     };
-
-    constexpr uint32_t PAGE_SIZE = 0x1000;
   };
 
   namespace AUX
@@ -435,6 +277,8 @@ namespace AP
 
   namespace CLKMAN
   {
+    // https://www.scribd.com/doc/127599939/BCM2835-Audio-clocks
+
     enum class TYPE
     {
       PCM,
@@ -485,7 +329,7 @@ namespace AP
       1'000'000'000,
       500'000'000,
       216'000'000,
-  };
+    };
 
     constexpr uint32_t BASE      = RPI::PHYS_REG_BASE + 0x101000;
     constexpr uint32_t PWM_CTL   = 0xA0;
@@ -495,7 +339,7 @@ namespace AP
     constexpr uint32_t PASSWD    = 0x5a << 24;
     constexpr uint32_t CTL       = 0xA0;
     constexpr uint32_t DIV       = 0xA4;
-    constexpr double   FREQUENCY = 100'000'000.0;
+    constexpr double   FREQUENCY = 100'000'000.0; // default PWM clock source frequency
   };
 
   namespace SYSTIMER
@@ -825,14 +669,6 @@ class AikaPi
     };
 
   public: 
-    class Utility
-    {
-      public:
-        Utility ();
-
-        static constexpr double normalize (double input_val, double input_min, double input_max, double output_min, double output_max);
-    };
-
     class Uncached : public Peripheral
     {
       public: 
@@ -897,7 +733,6 @@ class AikaPi
     static AUX          aux;
     static ClockManager cm;
     static SystemTimer  st;
-    static Utility      util;
   
   public:
     AikaPi ();

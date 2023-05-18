@@ -23,7 +23,6 @@ AikaPi::PWM           AikaPi::pwm   (reinterpret_cast<void*>(AP::PWM::BASE));
 AikaPi::GPIO          AikaPi::gpio  (reinterpret_cast<void*>(AP::GPIO::BASE));
 AikaPi::AUX           AikaPi::aux   (reinterpret_cast<void*>(AP::AUX::BASE));
 AikaPi::SystemTimer   AikaPi::st    (reinterpret_cast<void*>(AP::SYSTIMER::BASE));
-AikaPi::Utility       AikaPi::util  ();
 
 AikaPi:: 
 AikaPi ()
@@ -275,8 +274,8 @@ map_addresses (void* phys_addr)
   m_phys  = phys_addr;
   m_size  = page_roundup (AP::RPI::PAGE_SIZE);
   m_bus   = reinterpret_cast<uint8_t*>(phys_addr) - 
-            reinterpret_cast<uint8_t*>(PHYS_REG_BASE) + 
-            reinterpret_cast<uint8_t*>(BUS_REG_BASE);
+            reinterpret_cast<uint8_t*>(AP::RPI::PHYS_REG_BASE) + 
+            reinterpret_cast<uint8_t*>(AP::RPI::BUS_REG_BASE);
   m_virt  = map_phys_to_virt (phys_addr, m_size);
 }
 
@@ -509,7 +508,7 @@ frequency (double value)
 void AikaPi::SPI:: 
 clear_fifo ()
 {
-  reg (SPI_CS, 2 << 4);
+  reg (AP::SPI::CS, 2 << 4);
 }
 
 AikaPi::DMA::
@@ -621,7 +620,7 @@ void AikaPi::DMA::
 next_cb (unsigned dma_chan, 
          uint32_t next_cb_bus_addr)
 {
-  reg (dma_chan, DMA_NEXTCONBK, next_cb_bus_addr);
+  reg (dma_chan, AP::DMA::NEXTCONBK, next_cb_bus_addr);
 }
 
 void AikaPi::DMA::
@@ -645,7 +644,7 @@ stop (unsigned dma_chan)
 uint32_t AikaPi::DMA::
 conblk_ad (unsigned dma_chan) const
 {
-  return (*(reg (dma_chan, DMA_CONBLK_AD)));
+  return (*(reg (dma_chan, AP::DMA::CONBLK_AD)));
 }
 
 AikaPi::Uncached:: 
@@ -1621,22 +1620,22 @@ low () const
   return (*(reg (AP::SYSTIMER::CLO)));
 }
 
-AikaPi::Utility:: 
-Utility ()
-{
+// AikaPi::Utility:: 
+// Utility ()
+// {
 
-}
+// }
 
-constexpr double AikaPi::Utility:: 
-normalize (double input_val,
-           double input_min, 
-           double input_max, 
-           double output_min, 
-           double output_max)
-{
-  return (((input_val - input_min) / (input_max - input_min)) * 
-    (output_max - output_min) + output_min);
-}
+// constexpr double AikaPi::Utility:: 
+// normalize (double input_val,
+//            double input_min, 
+//            double input_max, 
+//            double output_min, 
+//            double output_max)
+// {
+//   return (((input_val - input_min) / (input_max - input_min)) * 
+//     (output_max - output_min) + output_min);
+// }
 
 AikaPi::SPI_BB:: 
 SPI_BB (unsigned CS, unsigned MISO, unsigned MOSI, unsigned SCLK, double baud, AP::SPI::MODE i_mode)
