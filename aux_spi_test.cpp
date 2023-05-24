@@ -12,23 +12,22 @@ int main ()
 {
   AikaPi AP;
 
-
   LAB_MCP4XXX pot (LAB_MCP4XXX::PART_NUMBER::MCP4161,
-                    LAB_MCP4XXX::RESISTANCE_VERSION::_103,
+                    LAB_MCP4XXX::RESISTANCE_VERSION::_503,
                     2);
 
-  for (int b = 0; b < 10; b++)
+  for (int b = 0; b < 3; b++)
   {
     for (int a = 0; a <= 100; a++)
     {
-      std::cout << pot.resistance_per (0, a) << "\n";
+      std::cout << pot.resistance_per (0, a) << std::endl;
 
       std::this_thread::sleep_for (std::chrono::milliseconds (50));
     }
 
     for (int a = 100; a >= 0; a--)
     {
-      std::cout << pot.resistance_per (0, a)  << "\n";
+      std::cout << pot.resistance_per (0, a)  << std::endl;
 
       std::this_thread::sleep_for (std::chrono::milliseconds (50));
     }
