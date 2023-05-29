@@ -23,8 +23,9 @@ namespace AP
     #if RPI_VERSION == 0
       static constexpr uint32_t PHYS_REG_BASE = PI_01_REG_BASE;
       static constexpr double   CLOCK_HZ	    = 250'000'000;
+      static constexpr double   SPI_CLOCK_HZ  = 500'000'000;  // !! https://github.com/raspberrypi/linux/issues/2094 !!
    // static constexpr double   SPI_CLOCK_HZ  = 400'000'000;  // !! https://github.com/raspberrypi/linux/issues/2094 !!
-      static constexpr double   SPI_CLOCK_HZ  = 250'000'000;  // !! https://github.com/raspberrypi/linux/issues/2094 !!
+   // static constexpr double   SPI_CLOCK_HZ  = 250'000'000;  // !! https://github.com/raspberrypi/linux/issues/2094 !!
     
     #elif RPI_VERSION == 1
       static constexpr uint32_t PHYS_REG_BASE = PI_01_REG_BASE;
@@ -193,7 +194,7 @@ namespace AP
     constexpr uint32_t INT_STATUS = 0xFE0;
     constexpr uint32_t ENABLE     = 0xFF0;
 
-    constexpr unsigned CHAN_COUNT = 16;
+    constexpr unsigned NUMBER_OF_CHANNELS = 16;
   };
 
   namespace GPIO
@@ -492,7 +493,9 @@ class AikaPi
     class DMA : public Peripheral 
     {
       private:
-        uint32_t dma_chan_reg_offset (unsigned chan, uint32_t offset) const;
+        uint32_t  dma_chan_reg_offset (unsigned chan, uint32_t offset) const;
+        bool      chan_check          (unsigned dma_chan);
+        bool      chan_check_throw    (unsigned dma_chan);
 
       private:
         void init ();
@@ -501,21 +504,23 @@ class AikaPi
         DMA (void* phys_addr);
        ~DMA ();
 
-      volatile uint32_t* reg        (unsigned dma_chan, uint32_t offset) const;
-               void      reg        (unsigned dma_chan, uint32_t offset, uint32_t value);
-               uint32_t  reg_rbits  (unsigned dma_chan, uint32_t offset, unsigned shift, uint32_t mask = 0x1) const;
-               void      reg_wbits  (unsigned dma_chan, uint32_t offset, unsigned value, unsigned shift, uint32_t mask = 0x1);
-               void      disp_reg   (unsigned dma_chan, uint32_t offset) const;    
-               uint32_t  dest_ad    (unsigned dma_chan);
-               void      start      (unsigned dma_chan, uint32_t start_cb_bus_addr);
-               void      reset      (unsigned dma_chan);
-               bool      is_running (unsigned dma_chan) const;
-               void      pause      (unsigned dma_chan);
-               void      next_cb    (unsigned dma_chan, uint32_t next_cb_bus_addr);
-               void      abort      (unsigned dma_chan);
-               void      run        (unsigned dma_chan);
-               void      stop       (unsigned dma_chan);
-               uint32_t  conblk_ad  (unsigned dma_chan) const;
+      volatile uint32_t*  reg             (unsigned dma_chan, uint32_t offset) const;
+               void       reg             (unsigned dma_chan, uint32_t offset, uint32_t value);
+               uint32_t   reg_rbits       (unsigned dma_chan, uint32_t offset, unsigned shift, uint32_t mask = 0x1) const;
+               void       reg_wbits       (unsigned dma_chan, uint32_t offset, unsigned value, unsigned shift, uint32_t mask = 0x1);
+               void       disp_reg        (unsigned dma_chan, uint32_t offset) const;    
+               uint32_t   dest_ad         (unsigned dma_chan);
+               void       start           (unsigned dma_chan, uint32_t start_cb_bus_addr);
+               void       reset           (unsigned dma_chan);
+               bool       is_running      (unsigned dma_chan) const;
+               void       pause           (unsigned dma_chan);
+               void       next_cb         (unsigned dma_chan, uint32_t next_cb_bus_addr);
+               void       abort           (unsigned dma_chan);
+               void       run             (unsigned dma_chan);
+               void       stop            (unsigned dma_chan);
+               uint32_t   conblk_ad       (unsigned dma_chan) const;
+               void       clear_interrupt (unsigned dma_chan); 
+               bool       interrupt       (unsigned dma_chan) const;
     }; 
     
     class PWM : public Peripheral 

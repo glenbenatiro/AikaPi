@@ -402,9 +402,9 @@ reg_rbits (uint32_t offset,
  */
 void AikaPi::Peripheral::
 reg_wbits (uint32_t offset, 
-          uint32_t value, 
-          uint32_t shift, 
-          uint32_t mask)
+           uint32_t value, 
+           uint32_t shift, 
+           uint32_t mask)
 {
   wbits (reg (offset), value, shift, mask);
 }
@@ -529,11 +529,30 @@ dma_chan_reg_offset (unsigned chan, uint32_t offset) const
   return ((chan * 0x100) + offset);
 }
 
+bool AikaPi::DMA:: 
+chan_check (unsigned dma_chan)
+{
+  return (dma_chan <= AP::DMA::NUMBER_OF_CHANNELS && dma_chan >= 0);
+}
+
+bool AikaPi::DMA:: 
+chan_check_throw (unsigned dma_chan)
+{
+  if (!chan_check (dma_chan))
+  {
+    throw (std::out_of_range ("Invalid DMA channel number input."));
+
+    return (false);
+  }
+
+  return (true);
+}
+
 void AikaPi::DMA:: 
 init ()
 {
   // reset DMA chans 0 to 14. skip chan 15 for now as it has a different offset
-  for (int a = 0; a < AP::DMA::CHAN_COUNT - 1; a++)
+  for (int a = 0; a < AP::DMA::NUMBER_OF_CHANNELS - 1; a++)
   {
     reset (a);
   }
@@ -601,7 +620,7 @@ reset (unsigned dma_chan)
 {
   reg (dma_chan, AP::DMA::CS, 1 << 31);
 
-  std::this_thread::sleep_for (std::chrono::microseconds (10));
+  std::this_thread::sleep_for (std::chrono::microseconds (5));
 }
 
 bool AikaPi::DMA::
@@ -645,6 +664,20 @@ uint32_t AikaPi::DMA::
 conblk_ad (unsigned dma_chan) const
 {
   return (*(reg (dma_chan, AP::DMA::CONBLK_AD)));
+}
+
+void AikaPi::DMA::
+clear_interrupt (unsigned dma_chan)
+{
+  chan_check_throw (dma_chan);
+
+  Peripheral::reg_wbits (AP::DMA::INT_STATUS, 0, dma_chan);
+}
+
+bool AikaPi::DMA:: 
+interrupt (unsigned dma_chan) const
+{
+  return (Peripheral::reg_rbits (AP::DMA::INT_STATUS, dma_chan));
 }
 
 AikaPi::Uncached:: 
@@ -780,19 +813,19 @@ void AikaPi::PWM::
 reset ()
 {
   reg (AP::PWM::CTL,  0x40);
-  std::this_thread::sleep_for (std::chrono::microseconds (10));
+  std::this_thread::sleep_for (std::chrono::microseconds (5));
 
   reg (AP::PWM::STA,  0x1FE);
-  std::this_thread::sleep_for (std::chrono::microseconds (10));
+  std::this_thread::sleep_for (std::chrono::microseconds (5));
 
   reg (AP::PWM::RNG1, 0x20);
-  std::this_thread::sleep_for (std::chrono::microseconds (10));
+  std::this_thread::sleep_for (std::chrono::microseconds (5));
 
   reg (AP::PWM::DAT1, 0x0);
-  std::this_thread::sleep_for (std::chrono::microseconds (10));
+  std::this_thread::sleep_for (std::chrono::microseconds (5));
 
   reg (AP::PWM::DAT2, 0x0);
-  std::this_thread::sleep_for (std::chrono::microseconds (10));
+  std::this_thread::sleep_for (std::chrono::microseconds (5));
 }
 
 double AikaPi::PWM::
@@ -857,7 +890,7 @@ clear_fifo ()
 
   //while (!is_fifo_empty ());
 
-  std::this_thread::sleep_for (std::chrono::microseconds (10));
+  std::this_thread::sleep_for (std::chrono::microseconds (5));
 }
 
 bool AikaPi::PWM:: 
@@ -917,7 +950,7 @@ pull  (unsigned       pin,
 
   // 2. Wait 150 cycles - this provides the required set-up time
   //    for the control signal
-  std::this_thread::sleep_for (std::chrono::microseconds (10));
+  std::this_thread::sleep_for (std::chrono::microseconds (5));
 
   // 3. Write to GPPUDCLK0/1 to clock the control signal into the
   //    GPIO pads you wish to modify
@@ -925,7 +958,7 @@ pull  (unsigned       pin,
 
   // 4. Wait 150 cycles - this provides the required hold time
   //    for the control signal
-  std::this_thread::sleep_for (std::chrono::microseconds (10));
+  std::this_thread::sleep_for (std::chrono::microseconds (5));
 
   // 5. Write to GPPUD to remove the control signal
   reg (AP::GPIO::GPPUD, 0);
@@ -1213,7 +1246,7 @@ clear_fifos ()
 {
   m_aux->reg_wbits (off (AP::AUX::SPI::CNTL0_REG), 1, 9);
 
-  std::this_thread::sleep_for (std::chrono::microseconds (10));
+  std::this_thread::sleep_for (std::chrono::microseconds (5));
 
   m_aux->reg_wbits (off (AP::AUX::SPI::CNTL0_REG), 0, 9);
 }
@@ -1456,7 +1489,7 @@ source (AP::CLKMAN::SOURCE source)
 
     reg (off (AP::CLKMAN::CTL), data);
 
-    std::this_thread::sleep_for (std::chrono::microseconds (10));
+    std::this_thread::sleep_for (std::chrono::microseconds (5));
   }
   else 
   {
@@ -1474,7 +1507,7 @@ mash (AP::CLKMAN::MASH mash)
 
     reg (off (AP::CLKMAN::CTL), data);
 
-    std::this_thread::sleep_for (std::chrono::microseconds (10));
+    std::this_thread::sleep_for (std::chrono::microseconds (5));
   }
   else 
   {
@@ -1490,7 +1523,7 @@ divisor (uint32_t integral, uint32_t fractional)
     reg (off (AP::CLKMAN::DIV), (AP::CLKMAN::PASSWD) | (integral << 12) |
       (fractional));
     
-    std::this_thread::sleep_for (std::chrono::microseconds (10));
+    std::this_thread::sleep_for (std::chrono::microseconds (5));
   }
   else 
   {
