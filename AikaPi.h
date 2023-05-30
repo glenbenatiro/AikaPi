@@ -6,7 +6,7 @@
 // BCM2385 datasheet:
 // https://www.raspberrypi.org/app/uploads/2012/02/BCM2835-ARM-Peripherals.pdf
 
-#define RPI_VERSION 0
+#define RPI_VERSION 3
 
 namespace AP
 {
