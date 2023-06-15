@@ -322,14 +322,14 @@ namespace AP
 
     static unsigned SOURCE_FREQUENCY [] = 
     {
-      0,
-      19'200'000,
-      0,
-      0,
-      0,
-      1'000'000'000,
-      500'000'000,
-      216'000'000,
+      0,              // GND
+      19'200'000,     // Oscillator
+      0,              // testdebug0
+      0,              // testdebug1
+      0,              // PLLA
+      1'000'000'000,  // PLLC
+      500'000'000,    // PLLD
+      216'000'000,    // HDMI auxiliary
     };
 
     constexpr uint32_t BASE      = RPI::PHYS_REG_BASE + 0x101000;
