@@ -23,9 +23,7 @@ namespace AP
     #if RPI_VERSION == 0
       static constexpr uint32_t PHYS_REG_BASE = PI_01_REG_BASE;
       static constexpr double   CLOCK_HZ	    = 250'000'000;
-      static constexpr double   SPI_CLOCK_HZ  = 500'000'000;  // !! https://github.com/raspberrypi/linux/issues/2094 !!
-   // static constexpr double   SPI_CLOCK_HZ  = 400'000'000;  // !! https://github.com/raspberrypi/linux/issues/2094 !!
-   // static constexpr double   SPI_CLOCK_HZ  = 250'000'000;  // !! https://github.com/raspberrypi/linux/issues/2094 !!
+      static constexpr double   SPI_CLOCK_HZ  = 500'000'000;
     
     #elif RPI_VERSION == 1
       static constexpr uint32_t PHYS_REG_BASE = PI_01_REG_BASE;
@@ -45,37 +43,6 @@ namespace AP
 
     constexpr uint32_t BUS_REG_BASE = 0x7E000000;
     constexpr uint32_t PAGE_SIZE    = 0x1000;
-
-    namespace PIN
-    {
-      namespace AUX
-      {
-        namespace SPI1
-        {
-          constexpr unsigned SCLK = 21;
-          constexpr unsigned MOSI = 20;
-          constexpr unsigned MISO = 19;
-          constexpr unsigned CE0  = 18;
-          constexpr unsigned CE1  = 17;
-          constexpr unsigned CE2  = 16;
-        };
-      };
-
-      namespace PWM
-      {
-        constexpr unsigned _0 = 12;
-        constexpr unsigned _1 = 19;
-      };
-
-      namespace SPI
-      {
-        constexpr unsigned SCLK = 11;
-        constexpr unsigned MOSI = 10;
-        constexpr unsigned MISO = 9;
-        constexpr unsigned CE0  = 8;
-        constexpr unsigned CE1  = 7;
-      };
-    };
   };
 
   namespace AUX
@@ -96,28 +63,6 @@ namespace AP
     };
   };
 
-  namespace GPIO
-  {
-    enum class FUNC
-    {
-      INPUT   = 0,
-      OUTPUT  = 1,
-      ALT0    = 4,
-      ALT1    = 5,
-      ALT2    = 6,
-      ALT3    = 7,
-      ALT4    = 3,
-      ALT5    = 2
-    };
-
-    enum class PULL
-    {
-      OFF   = 0,
-      DOWN  = 1,
-      UP    = 2
-    };
-  };
-
   namespace DMA
   {
     struct CTL_BLK
@@ -132,7 +77,6 @@ namespace AP
                 unused;
     } __attribute__ (( aligned(32) ));
 
-  
     enum class PERIPH_DREQ
     {
       NONE          = 0,
@@ -199,6 +143,35 @@ namespace AP
 
   namespace GPIO
   {
+    enum class FUNC
+    {
+      INPUT   = 0,
+      OUTPUT  = 1,
+      ALT0    = 4,
+      ALT1    = 5,
+      ALT2    = 6,
+      ALT3    = 7,
+      ALT4    = 3,
+      ALT5    = 2
+    };
+
+    enum class PULL
+    {
+      OFF   = 0,
+      DOWN  = 1,
+      UP    = 2
+    };
+
+    enum class EVENT
+    {
+      RISING_EDGE,
+      FALLING_EDGE,
+      HIGH,
+      LOW,
+      ASYNC_RISING_EDGE,
+      ASYNC_FALLING_EDGE,
+    };
+
     constexpr uint32_t BASE       = RPI::PHYS_REG_BASE + 0x200000;
     constexpr uint32_t GPFSEL0    = 0x00;
     constexpr uint32_t GPSET0     = 0x1C;
@@ -209,6 +182,8 @@ namespace AP
     constexpr uint32_t GPFEN0     = 0x58;
     constexpr uint32_t GPHEN0     = 0x64;
     constexpr uint32_t GPLEN0     = 0x70;
+    constexpr uint32_t GPAREN0    = 0x7C;
+    constexpr uint32_t GPAFEN0    = 0x88;
     constexpr uint32_t GPPUD      = 0x94;
     constexpr uint32_t GPPUDCLK0  = 0x98;
   };
@@ -360,6 +335,21 @@ namespace AP
     constexpr double MAX_BAUD = 200'000.0;
     constexpr double MIN_BAUD = 50.0;
   };
+
+  namespace INTERRUPT
+  {
+    constexpr uint32_t BASE               = RPI::PHYS_REG_BASE + 0x00B000;
+    constexpr uint32_t IRQ_BASIC_PENDING  = 0x200;
+    constexpr uint32_t IRQ_PENDING_1      = 0x204;
+    constexpr uint32_t IRQ_PENDING_2      = 0x208;
+    constexpr uint32_t FIQ_CONTROL        = 0x20C;
+    constexpr uint32_t ENABLE_IRQ_1       = 0x210;
+    constexpr uint32_t ENABLE_IRQ_2       = 0x214;
+    constexpr uint32_t ENABLE_BASIC_IRQ   = 0x218;
+    constexpr uint32_t DISABLE_IRQ_1      = 0x21C;
+    constexpr uint32_t DISABLE_IRQ_2      = 0x220;
+    constexpr uint32_t DISABLE_BASIC_IRQ  = 0x224;
+  };
 };
 
 class AikaPi
@@ -470,11 +460,18 @@ class AikaPi
         GPIO (void* phys_addr);
        ~GPIO ();
 
-        void set    (unsigned pin, AP::GPIO::FUNC func_val, AP::GPIO::PULL pull_val, bool value = 0);
-        void func   (unsigned pin, AP::GPIO::FUNC func_val);
-        void pull   (unsigned pin, AP::GPIO::PULL pull_val);
-        void write  (unsigned pin, bool value);
-        bool read   (unsigned pin);
+        void      set                       (unsigned pin, AP::GPIO::FUNC func_val, AP::GPIO::PULL pull_val, bool value = 0);
+        void      func                      (unsigned pin, AP::GPIO::FUNC func_val);
+        void      pull                      (unsigned pin, AP::GPIO::PULL pull_val);
+        void      write                     (unsigned pin, bool value);
+        bool      read                      (unsigned pin);
+        uint32_t  event_detect_status       () const;
+        bool      event_detect_status       (unsigned pin) const;
+        void      clear_event_detect_status ();
+        void      clear_event_detect_status (unsigned pin); 
+        void      set_event_detect          (unsigned pin, AP::GPIO::EVENT event, bool state);
+        void      clear_all_event_detect    (unsigned pin);
+        uint32_t  level                     () const;
     };
 
     class SPI : public Peripheral
@@ -535,19 +532,20 @@ class AikaPi
         PWM (void* phys_addr);
        ~PWM ();
       
-      void      start            (bool channel);
-      void      stop             (bool channel);
-      void      algo             (bool channel, AP::PWM::ALGO algo);
-      void      use_fifo         (bool channel, bool value);
-      void      reset            ();
-      double    frequency        (bool channel, double value);
-      void      duty_cycle       (bool channel, double value);
-      uint32_t  range            (bool channel);
-      bool      is_using_fifo    (bool channel);
-      void      repeat_last_data (bool channel, bool value);
-      void      clear_fifo       ();
-      bool      is_fifo_empty    () const;
-      bool      is_fifo_full     () const;
+      void      start             (bool channel);
+      void      stop              (bool channel);
+      void      algo              (bool channel, AP::PWM::ALGO algo);
+      void      use_fifo          (bool channel, bool value);
+      void      reset             ();
+      double    frequency         (bool channel, double value);
+      void      duty_cycle        (bool channel, double value);
+      uint32_t  range             (bool channel);
+      bool      is_using_fifo     (bool channel);
+      void      repeat_last_data  (bool channel, bool value);
+      void      clear_fifo        ();
+      bool      is_fifo_empty     () const;
+      bool      is_fifo_full      () const;
+      bool      is_running        (bool channel) const;
     };
 
     class AUX : public Peripheral 
@@ -673,6 +671,15 @@ class AikaPi
        uint32_t low () const;
     };
 
+    class Interrupt : public Peripheral 
+    {
+      private:
+
+      public:
+        Interrupt (void* phys_addr);
+       ~Interrupt ();
+    };
+
   public: 
     class Uncached : public Peripheral
     {
@@ -738,6 +745,7 @@ class AikaPi
     static AUX          aux;
     static ClockManager cm;
     static SystemTimer  st;
+    static Interrupt    interrupt;
   
   public:
     AikaPi ();

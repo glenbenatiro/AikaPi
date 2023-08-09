@@ -16,13 +16,14 @@
 #include <sys/stat.h>
 #include <sys/ioctl.h>
 
-AikaPi::ClockManager  AikaPi::cm    (reinterpret_cast<void*>(AP::CLKMAN::BASE)); // cm should come before pwm!
-AikaPi::SPI           AikaPi::spi   (reinterpret_cast<void*>(AP::SPI::BASE));
-AikaPi::DMA           AikaPi::dma   (reinterpret_cast<void*>(AP::DMA::BASE));
-AikaPi::PWM           AikaPi::pwm   (reinterpret_cast<void*>(AP::PWM::BASE));
-AikaPi::GPIO          AikaPi::gpio  (reinterpret_cast<void*>(AP::GPIO::BASE));
-AikaPi::AUX           AikaPi::aux   (reinterpret_cast<void*>(AP::AUX::BASE));
-AikaPi::SystemTimer   AikaPi::st    (reinterpret_cast<void*>(AP::SYSTIMER::BASE));
+AikaPi::ClockManager  AikaPi::cm        (reinterpret_cast<void*>(AP::CLKMAN::BASE)); // cm should come before pwm!
+AikaPi::SPI           AikaPi::spi       (reinterpret_cast<void*>(AP::SPI::BASE));
+AikaPi::DMA           AikaPi::dma       (reinterpret_cast<void*>(AP::DMA::BASE));
+AikaPi::PWM           AikaPi::pwm       (reinterpret_cast<void*>(AP::PWM::BASE));
+AikaPi::GPIO          AikaPi::gpio      (reinterpret_cast<void*>(AP::GPIO::BASE));
+AikaPi::AUX           AikaPi::aux       (reinterpret_cast<void*>(AP::AUX::BASE));
+AikaPi::SystemTimer   AikaPi::st        (reinterpret_cast<void*>(AP::SYSTIMER::BASE));
+AikaPi::Interrupt     AikaPi::interrupt (reinterpret_cast<void*>(AP::INTERRUPT::BASE));
 
 AikaPi:: 
 AikaPi ()
@@ -304,18 +305,29 @@ wbits (uint32_t data,
   return ((data & ~(mask << shift)) | (value << shift));
 }
 
+/**
+ * @brief Read the entire value from register pointed to by uint32_t* reg
+ */
 uint32_t AikaPi::Peripheral:: 
 rreg (uint32_t* reg) 
 {
   return (*reg);
 }
 
+/**
+ * @brief Write value to register pointed to by uint32_t* reg,
+ *        replacing the previous contents entirely
+ */
 void AikaPi::Peripheral:: 
 wreg (uint32_t* reg, uint32_t value) 
 {
   *reg = value;
 }
 
+/**
+ * @brief Read a number of bits from register pointed to by uint32_t* reg,
+ *        given the read mask and number of bits to shift right
+ */
 uint32_t AikaPi::Peripheral::
 rbits (uint32_t* reg, 
        uint32_t  shift, 
@@ -324,6 +336,10 @@ rbits (uint32_t* reg,
   return ((*reg >> shift) & mask);
 }
 
+/**
+ * @brief Write a number of bits to register pointed to by uint32_t* reg,
+ *        given the value, write mask, and number of bits to shift left 
+ */
 void AikaPi::Peripheral::  
 wbits (uint32_t* reg, 
        uint32_t  value, 
@@ -333,18 +349,29 @@ wbits (uint32_t* reg,
   *reg = wbits (*reg, value, shift, mask);
 }
 
+/**
+ * @brief Read the entire value from volatile register pointed to by uint32_t* reg
+ */
 uint32_t AikaPi::Peripheral:: 
 rreg (volatile uint32_t* reg) 
 {
   return (rreg (const_cast<uint32_t*>(reg)));
 }
 
+/**
+ * @brief Write value to volatile register pointed to by uint32_t* reg,
+ *        replacing the previous contents entirely
+ */
 void AikaPi::Peripheral:: 
 wreg (volatile uint32_t* reg, uint32_t value)
 {
   wreg (const_cast<uint32_t*>(reg), value);
 }
 
+/**
+ * @brief Read a number of bits from volatile register pointed to by uint32_t* reg,
+ *        given the read mask and number of bits to shift right
+ */
 uint32_t AikaPi::Peripheral::
 rbits (volatile uint32_t*  reg, 
                 uint32_t   shift, 
@@ -353,18 +380,22 @@ rbits (volatile uint32_t*  reg,
   return (rbits (const_cast<uint32_t*>(reg), shift, mask));
 }
 
+/**
+ * @brief Write a number of bits to volatile register pointed to by uint32_t* reg,
+ *        given the value, write mask, and number of bits to shift left 
+ */
 void AikaPi::Peripheral::  
-wbits (volatile uint32_t*  reg, 
-       uint32_t   value, 
-       uint32_t   shift, 
-       uint32_t   mask) 
+wbits (volatile uint32_t* reg, 
+       uint32_t           value, 
+       uint32_t           shift, 
+       uint32_t           mask) 
 {
   wbits (const_cast<uint32_t*>(reg), value, shift, mask);
 }
 
 /**
  * @brief Returns a volatile uint32_t pointer to the virtual address of a 
- *        peripheral's register 
+ *        peripheral's register
  */
 volatile uint32_t* AikaPi::Peripheral::
 reg (uint32_t offset) const
@@ -759,6 +790,7 @@ bus (volatile void* offset) const volatile
   return (bus (const_cast<void*>(offset)));
 }
 
+// --- PWM ---
 AikaPi::PWM:: 
 PWM (void* phys_addr) : Peripheral (phys_addr)
 {
@@ -834,9 +866,8 @@ frequency (bool   channel,
 {
   uint32_t range = std::round (cm.pwm.frequency () / value);
 
-  reg (channel ? AP::PWM::RNG2 : AP::PWM::RNG1, range);
-
-  duty_cycle (channel, m_duty_cycle);
+  reg         (channel ? AP::PWM::RNG2 : AP::PWM::RNG1, range);
+  duty_cycle  (channel, m_duty_cycle);
 
   return (cm.pwm.frequency () / range);
 }
@@ -904,6 +935,14 @@ is_fifo_full () const
 {
   return (reg_rbits (AP::PWM::STA, 0));
 }
+
+bool AikaPi::PWM:: 
+is_running (bool channel) const 
+{
+  reg_rbits (AP::PWM::CTL, channel ? 8 : 0);
+}
+
+// =====
 
 AikaPi::GPIO::
 GPIO (void* phys_addr) : Peripheral (phys_addr)
@@ -985,6 +1024,105 @@ read (unsigned pin)
   return (rbits (read_reg, (pin % 32)));
 }
 
+uint32_t AikaPi::GPIO::
+event_detect_status () const
+{
+  volatile uint32_t* read_reg = reg (AP::GPIO::GPEDS0);
+
+  return (rreg (read_reg));
+}
+
+bool AikaPi::GPIO:: 
+event_detect_status (unsigned pin) const
+{
+  volatile uint32_t* read_reg = reg (AP::GPIO::GPEDS0) + (pin / 32);
+
+  return (rbits (read_reg, pin % 32));
+}
+
+void AikaPi::GPIO::
+clear_event_detect_status ()
+{
+  volatile uint32_t* write_reg = reg (AP::GPIO::GPEDS0);
+
+  wreg (write_reg,      0xFFFFFFFF);
+  wreg (write_reg + 1,  0xFFFFFFFF);
+}
+
+void AikaPi::GPIO:: 
+clear_event_detect_status (unsigned pin)
+{
+  volatile uint32_t* write_reg = reg (AP::GPIO::GPEDS0) + (pin / 32);
+
+  wbits (write_reg, 1, pin % 32);
+}
+
+void AikaPi::GPIO:: 
+set_event_detect (unsigned pin, AP::GPIO::EVENT event, bool state)
+{
+  uint32_t offset = 0;
+
+  switch (event)
+  {    
+    case (AP::GPIO::EVENT::RISING_EDGE):
+    {
+      offset = AP::GPIO::GPREN0;
+      break;
+    }
+
+    case (AP::GPIO::EVENT::FALLING_EDGE):
+    {
+      offset = AP::GPIO::GPFEN0;
+      break;
+    }
+
+    case (AP::GPIO::EVENT::HIGH):
+    {
+      offset = AP::GPIO::GPHEN0;
+      break;
+    }
+
+    case (AP::GPIO::EVENT::LOW):
+    {
+      offset = AP::GPIO::GPLEN0;
+      break;
+    }
+
+    case (AP::GPIO::EVENT::ASYNC_RISING_EDGE):
+    {
+      offset = AP::GPIO::GPAREN0;
+      break;
+    }
+
+    case (AP::GPIO::EVENT::ASYNC_FALLING_EDGE):
+    {
+      offset = AP::GPIO::GPAFEN0;
+      break;
+    }
+  }
+
+  reg_wbits (offset + (pin / 32), state, (pin % 32));
+}
+
+void AikaPi::GPIO:: 
+clear_all_event_detect (unsigned pin)
+{
+  set_event_detect (pin, AP::GPIO::EVENT::LOW,                0);
+  set_event_detect (pin, AP::GPIO::EVENT::HIGH,               0);
+  set_event_detect (pin, AP::GPIO::EVENT::RISING_EDGE,        0);
+  set_event_detect (pin, AP::GPIO::EVENT::FALLING_EDGE,       0);
+  set_event_detect (pin, AP::GPIO::EVENT::ASYNC_RISING_EDGE,  0);
+  set_event_detect (pin, AP::GPIO::EVENT::ASYNC_FALLING_EDGE, 0);
+}
+
+uint32_t AikaPi::GPIO:: 
+level () const
+{
+  return (*(reg (AP::GPIO::GPLEV0)));
+}
+
+// ===== AikaPi::AUX::SPI =====
+
 AikaPi::AUX::SPI:: 
 SPI (bool channel, AUX* aux)
   : m_channel (channel), m_aux (aux)
@@ -1014,13 +1152,13 @@ is_rx_fifo_empty () const
 void AikaPi::AUX::SPI:: 
 init ()
 {
-  gpio.set (AP::RPI::PIN::AUX::SPI1::SCLK, AP::GPIO::FUNC::ALT4,  AP::GPIO::PULL::OFF);
-  gpio.set (AP::RPI::PIN::AUX::SPI1::MOSI, AP::GPIO::FUNC::ALT4,  AP::GPIO::PULL::OFF);
-  gpio.set (AP::RPI::PIN::AUX::SPI1::MISO, AP::GPIO::FUNC::ALT4,  AP::GPIO::PULL::DOWN);
+  // gpio.set (AP::RPI::PIN::AUX::SPI1::SCLK, AP::GPIO::FUNC::ALT4,  AP::GPIO::PULL::OFF);
+  // gpio.set (AP::RPI::PIN::AUX::SPI1::MOSI, AP::GPIO::FUNC::ALT4,  AP::GPIO::PULL::OFF);
+  // gpio.set (AP::RPI::PIN::AUX::SPI1::MISO, AP::GPIO::FUNC::ALT4,  AP::GPIO::PULL::DOWN);
 
-  gpio.set (AP::RPI::PIN::AUX::SPI1::CE0,  AP::GPIO::FUNC::OUTPUT, AP::GPIO::PULL::OFF, !m_cs_polarity);
-  gpio.set (AP::RPI::PIN::AUX::SPI1::CE1,  AP::GPIO::FUNC::OUTPUT, AP::GPIO::PULL::OFF, !m_cs_polarity);
-  gpio.set (AP::RPI::PIN::AUX::SPI1::CE2,  AP::GPIO::FUNC::OUTPUT, AP::GPIO::PULL::OFF, !m_cs_polarity);
+  // gpio.set (AP::RPI::PIN::AUX::SPI1::CE0,  AP::GPIO::FUNC::OUTPUT, AP::GPIO::PULL::OFF, !m_cs_polarity);
+  // gpio.set (AP::RPI::PIN::AUX::SPI1::CE1,  AP::GPIO::FUNC::OUTPUT, AP::GPIO::PULL::OFF, !m_cs_polarity);
+  // gpio.set (AP::RPI::PIN::AUX::SPI1::CE2,  AP::GPIO::FUNC::OUTPUT, AP::GPIO::PULL::OFF, !m_cs_polarity);
 
   // load default settings
   enable                  ();
@@ -1040,15 +1178,15 @@ cs_pin (unsigned cs)
   switch (cs)
   {
     case 0:
-      return (AP::RPI::PIN::AUX::SPI1::CE0);
+      return (18);
       break; 
     
     case 1:
-      return (AP::RPI::PIN::AUX::SPI1::CE1);
+      return (17);
       break;
 
     default:
-      return (AP::RPI::PIN::AUX::SPI1::CE2);
+      return (16);
       break;
   }
 }
@@ -1670,9 +1808,31 @@ low () const
 //     (output_max - output_min) + output_min);
 // }
 
+AikaPi::Interrupt::
+Interrupt (void* phys_addr) : Peripheral (phys_addr)
+{
+
+}
+
+AikaPi::Interrupt::
+~Interrupt ()
+{
+  
+}
+
 AikaPi::SPI_BB:: 
-SPI_BB (unsigned CS, unsigned MISO, unsigned MOSI, unsigned SCLK, double baud, AP::SPI::MODE i_mode)
-  : m_CS (CS), m_MISO (MISO), m_MOSI (MOSI), m_SCLK (SCLK), m_baud (baud), m_mode (i_mode)
+SPI_BB (unsigned      CS, 
+        unsigned      MISO, 
+        unsigned      MOSI, 
+        unsigned      SCLK, 
+        double        baud, 
+        AP::SPI::MODE i_mode)
+  : m_CS    (CS), 
+    m_MISO  (MISO), 
+    m_MOSI  (MOSI), 
+    m_SCLK  (SCLK), 
+    m_baud  (baud), 
+    m_mode  (i_mode)
 {
   if (m_baud > AP::SPI_BB::MAX_BAUD)
   {
@@ -1909,7 +2069,7 @@ xfer (char*    rxd,
 {
   start ();
 
-  for (int pos = 0; pos < length; pos++)
+  for (unsigned pos = 0; pos < length; pos++)
   {
     rxd[pos] = xfer_byte (txd[pos]);
   }
