@@ -386,17 +386,23 @@ class RPi_Board_Info
     };
 
   private:
+
+    // ! ========== !
+    // DO NOT REARRANGE THIS. INITIALIZATION IN 
+    // INITIALIZER LIST IS DEPENDENT ON THIS ORDER.
+
+    uint32_t        m_revision_code         = 0; 
     RPI_BOARD_TYPE  m_type;
     RPI_BOARD_PROC  m_proc;
+    uint32_t        m_periph_phys_addr_base = 0;
+    uint32_t        m_core_freq             = 0;
 
-    uint32_t        m_revision_code   = 0;
-    uint32_t        m_phys_addr_base  = 0;
-    uint32_t        m_core_freq       = 0;
+    // ! ========== !
 
   private:
     bool            is_new_style_revision_code  (uint32_t revision_code);
     uint32_t        get_revision_code           ();
-    uint32_t        get_phys_addr_base          (RPI_BOARD_PROC proc);
+    uint32_t        get_periph_phys_addr_base   (RPI_BOARD_PROC proc);
     uint32_t        get_core_freq               (RPI_BOARD_TYPE type);
     RPI_BOARD_TYPE  get_type                    (uint32_t revision_code);
     RPI_BOARD_PROC  get_proc                    (uint32_t revision_code);
@@ -405,13 +411,14 @@ class RPi_Board_Info
     RPi_Board_Info ();
    ~RPi_Board_Info ();
 
-    uint32_t phys_addr_base () const;
+    uint32_t periph_phys_addr_base  () const;
+    uint32_t core_freq              () const;
 };
 
 class AikaPi
-{
+{ 
   private:
-    RPi_Board_Info m_rpi_board_info;
+    static RPi_Board_Info m_rpi_board_info;
 
   private:
     // AikaPi is a lazy singleton
@@ -838,6 +845,11 @@ class AikaPi
     };
 
   public:
+
+    // ! ========== !
+    // DO NOT REARRANGE THIS. INITIALIZATION IN 
+    // INITIALIZER LIST IS DEPENDENT ON THIS ORDER.
+
     SPI          spi;
     DMA          dma;
     PWM          pwm;
@@ -846,6 +858,8 @@ class AikaPi
     ClockManager cm;
     SystemTimer  st;
     Interrupt    interrupt;
+
+    // ! ========== !
   
   public:
     static AikaPi& get_instance ();

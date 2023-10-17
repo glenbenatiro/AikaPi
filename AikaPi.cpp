@@ -4,19 +4,25 @@
 #include <thread>   
 #include <fstream>
 #include <stdexcept>
-  
+
 #include <fcntl.h>      
 #include <unistd.h>     
 #include <sys/mman.h>   
 #include <sys/ioctl.h>  
 
+//
+
+RPi_Board_Info AikaPi::m_rpi_board_info;
+
+//
+
 RPi_Board_Info:: 
 RPi_Board_Info ()
-  : m_revision_code   (get_revision_code  ()),
-    m_type            (get_type           (m_revision_code)),
-    m_proc            (get_proc           (m_revision_code)),
-    m_phys_addr_base  (get_phys_addr_base (m_proc)),
-    m_core_freq       (get_core_freq      (m_type))
+  : m_revision_code         (get_revision_code          ()),
+    m_type                  (get_type                   (m_revision_code)),
+    m_proc                  (get_proc                   (m_revision_code)),
+    m_periph_phys_addr_base (get_periph_phys_addr_base  (m_proc)),
+    m_core_freq             (get_core_freq              (m_type))
 {
 
 }
@@ -95,7 +101,7 @@ get_proc (uint32_t revision_code)
 }
 
 uint32_t RPi_Board_Info:: 
-get_phys_addr_base (RPI_BOARD_PROC proc)
+get_periph_phys_addr_base (RPI_BOARD_PROC proc)
 {
   return (RPI_BOARD_PROC_PERIPH_PHYS_ADDR_BASE.at (proc));
 }
@@ -107,24 +113,29 @@ get_core_freq (RPI_BOARD_TYPE type)
 }
 
 uint32_t RPi_Board_Info:: 
-phys_addr_base () const
+periph_phys_addr_base () const
 {
-  return (m_phys_addr_base);
+  return (m_periph_phys_addr_base);
+}
+
+uint32_t RPi_Board_Info:: 
+core_freq () const
+{
+  return (m_core_freq);
 }
 
 
 
 AikaPi:: 
 AikaPi ()
-  : m_rpi_board_info  (),
-    cm                (reinterpret_cast<void*>(m_rpi_board_info.phys_addr_base () + AP::CLKMAN::BASE   ), *this), // cm should come before pwm!
-    spi               (reinterpret_cast<void*>(m_rpi_board_info.phys_addr_base () + AP::SPI::BASE      ), *this),
-    dma               (reinterpret_cast<void*>(m_rpi_board_info.phys_addr_base () + AP::DMA::BASE      ), *this),
-    pwm               (reinterpret_cast<void*>(m_rpi_board_info.phys_addr_base () + AP::PWM::BASE      ), *this),
-    gpio              (reinterpret_cast<void*>(m_rpi_board_info.phys_addr_base () + AP::GPIO::BASE     ), *this),
-    aux               (reinterpret_cast<void*>(m_rpi_board_info.phys_addr_base () + AP::AUX::BASE      ), *this),
-    st                (reinterpret_cast<void*>(m_rpi_board_info.phys_addr_base () + AP::SYSTIMER::BASE ), *this),
-    interrupt         (reinterpret_cast<void*>(m_rpi_board_info.phys_addr_base () + AP::INTERRUPT::BASE), *this)
+  : cm       (reinterpret_cast<void*>(m_rpi_board_info.periph_phys_addr_base () + AP::CLKMAN::BASE   ), *this), // cm should come before pwm!
+    spi      (reinterpret_cast<void*>(m_rpi_board_info.periph_phys_addr_base () + AP::SPI::BASE      ), *this),
+    dma      (reinterpret_cast<void*>(m_rpi_board_info.periph_phys_addr_base () + AP::DMA::BASE      ), *this),
+    pwm      (reinterpret_cast<void*>(m_rpi_board_info.periph_phys_addr_base () + AP::PWM::BASE      ), *this),
+    gpio     (reinterpret_cast<void*>(m_rpi_board_info.periph_phys_addr_base () + AP::GPIO::BASE     ), *this),
+    aux      (reinterpret_cast<void*>(m_rpi_board_info.periph_phys_addr_base () + AP::AUX::BASE      ), *this),
+    st       (reinterpret_cast<void*>(m_rpi_board_info.periph_phys_addr_base () + AP::SYSTIMER::BASE ), *this),
+    interrupt(reinterpret_cast<void*>(m_rpi_board_info.periph_phys_addr_base () + AP::INTERRUPT::BASE), *this)
 {
 
 }
@@ -347,7 +358,7 @@ map_addresses (void* phys_addr)
   m_phys  = phys_addr;
   m_size  = page_roundup (AP::RPI::PAGE_SIZE);
   m_bus   = reinterpret_cast<uint8_t*>(phys_addr) - 
-            reinterpret_cast<uint8_t*>(AP::RPI::PHYS_REG_BASE) + 
+            reinterpret_cast<uint8_t*>(m_rpi_board_info.periph_phys_addr_base ()) + 
             reinterpret_cast<uint8_t*>(AP::RPI::BUS_REG_BASE);
   m_virt  = map_phys_to_virt (phys_addr, m_size);
 }
@@ -870,7 +881,7 @@ shift_length ()
 void AikaPi::AUX::SPI:: 
 frequency (double value)
 {
-  uint16_t divider = ((AP::RPI::CLOCK_HZ / (value * 2))) - 1;
+  uint16_t divider = ((m_rpi_board_info.core_freq () / (value * 2))) - 1;
   divider &= 0x0FFF;
 
   m_aux.reg_wbits (off (AP::AUX::SPI::CNTL0_REG), divider, 20, 12);
@@ -1594,18 +1605,12 @@ double AikaPi::SPI::
 frequency (double value,
            double spi_clk_src_freq)
 {
-
-}
-
-double AikaPi::SPI::
-frequency (double value)
-{
   uint32_t divisor;
 
-  if (value <= AP::RPI::SPI_CLOCK_HZ && value > 0)
+  if (value <= spi_clk_src_freq && value > 0)
   {
     // SPI clock is divided down from core clock
-    divisor = std::round (AP::RPI::SPI_CLOCK_HZ / value);
+    divisor = std::round (spi_clk_src_freq / value);
   }
   else 
   {
@@ -1619,7 +1624,13 @@ frequency (double value)
 
   reg (AP::SPI::CLK, divisor);
 
-  return (AP::RPI::SPI_CLOCK_HZ / divisor);
+  return (spi_clk_src_freq / divisor);
+}
+
+double AikaPi::SPI::
+frequency (double value)
+{
+  frequency (value, m_rpi_board_info.core_freq ());
 }
 
 void AikaPi::SPI:: 
