@@ -5,7 +5,8 @@
 #include <fstream>
 #include <stdexcept>
 
-#include <fcntl.h>      
+#include <fcntl.h>    
+#include <string.h> 
 #include <unistd.h>     
 #include <sys/mman.h>   
 #include <sys/ioctl.h>  
@@ -321,6 +322,26 @@ mem_release (int fd,
 // ********************
 // MemoryMap
 // ********************
+void AikaPi::MemoryMap:: 
+map_addresses (void* phys_addr)
+{
+  m_size  = page_roundup (AP::RPI::PAGE_SIZE);
+
+  m_phys  = phys_addr;
+  m_bus   = map_phys_to_bus   (phys_addr);
+  m_virt  = map_phys_to_virt  (phys_addr, m_size);
+}
+
+void* AikaPi::MemoryMap:: 
+map_phys_to_bus (void* phys_addr)
+{
+  void* bus = reinterpret_cast<uint8_t*>(phys_addr) - 
+    reinterpret_cast<uint8_t*>(m_rpi_board_info.periph_phys_addr_base ()) + 
+    reinterpret_cast<uint8_t*>(AP::RPI::BUS_REG_BASE);
+
+  return (bus);
+}
+
 void* AikaPi::MemoryMap::
 map_phys_to_virt (void*     phys_addr, 
                   unsigned  size)
@@ -344,23 +365,10 @@ map_phys_to_virt (void*     phys_addr,
 
   if (mem == MAP_FAILED)
   {
-    // std::string msg ("Can't map memory: " + std::string (strerror (errno)));
-
-    throw (std::runtime_error ("Can't may physical memory to virtual.\n"));
+    throw (std::runtime_error ("mmap () failed. Error in mapping physical address to virtual address." + std::string (strerror (errno))));
   }
-  
-  return (mem);
-}
 
-void AikaPi::MemoryMap:: 
-map_addresses (void* phys_addr)
-{
-  m_phys  = phys_addr;
-  m_size  = page_roundup (AP::RPI::PAGE_SIZE);
-  m_bus   = reinterpret_cast<uint8_t*>(phys_addr) - 
-            reinterpret_cast<uint8_t*>(m_rpi_board_info.periph_phys_addr_base ()) + 
-            reinterpret_cast<uint8_t*>(AP::RPI::BUS_REG_BASE);
-  m_virt  = map_phys_to_virt (phys_addr, m_size);
+  return (mem);
 }
 
 void* AikaPi::MemoryMap::

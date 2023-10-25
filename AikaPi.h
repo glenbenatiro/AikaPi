@@ -499,9 +499,11 @@ class AikaPi
               *m_phys = nullptr; // physical address
 
       protected:
-        static void*  map_phys_to_virt  (void* phys_addr, unsigned size);
-               void   map_addresses     (void* phys_addr);
-        static void*  conv_bus_to_phys  (void* bus_addr);
+                void  map_addresses     (void* phys_addr);  
+        static  void* map_phys_to_bus   (void* phys_addr);   
+        static  void* map_phys_to_virt  (void* phys_addr, unsigned size);
+        static  void* conv_bus_to_phys  (void* bus_addr);
+        
         static void   unmap_segment     (void* virt_addr, unsigned size);
       
       public:
