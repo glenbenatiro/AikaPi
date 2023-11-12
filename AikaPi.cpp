@@ -1638,7 +1638,7 @@ frequency (double value,
 double AikaPi::SPI::
 frequency (double value)
 {
-  frequency (value, m_rpi_board_info.core_freq ());
+  return (frequency (value, m_rpi_board_info.core_freq ()));
 }
 
 void AikaPi::SPI:: 
