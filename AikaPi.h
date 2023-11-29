@@ -139,7 +139,7 @@ namespace AP
       HIGH,
       LOW,
       ASYNC_RISING_EDGE,
-      ASYNC_FALLING_EDGE,
+      ASYNC_FALLING_EDGE
     };
 
     constexpr uint32_t BASE       = 0x200000;

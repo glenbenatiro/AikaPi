@@ -1300,7 +1300,7 @@ pull  (unsigned       pin,
 
 void AikaPi::GPIO::
 write (unsigned pin,  
-      bool     value)
+       bool     value)
 {
   volatile uint32_t* write_reg = reg
     (value ? AP::GPIO::GPSET0 : AP::GPIO::GPCLR0) + (pin / 32);
